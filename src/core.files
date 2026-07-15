@@ -6,6 +6,8 @@ core/pipeline/scr1_pipe_exu.sv
 core/pipeline/scr1_pipe_ialu.sv
 core/pipeline/scr1_pipe_idu.sv
 core/pipeline/scr1_pipe_ifu.sv
+core/pipeline/scr1_pipe_bpred.sv
+core/pipeline/scr1_pipe_ras.sv
 core/pipeline/scr1_pipe_lsu.sv
 core/pipeline/scr1_pipe_mprf.sv
 core/pipeline/scr1_pipe_top.sv

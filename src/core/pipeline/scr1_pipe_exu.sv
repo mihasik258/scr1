@@ -159,6 +159,12 @@ module scr1_pipe_exu (
     output  logic [`SCR1_XLEN-1:0]              exu2csr_pc_next_o,          // Next PC
     output  logic                               exu2ifu_pc_new_req_o,       // New PC request
     output  logic [`SCR1_XLEN-1:0]              exu2ifu_pc_new_o            // New PC data
+`ifdef SCR1_BP_RAS_EN
+    ,
+    // IFU -> EXU RAS prediction for the current instruction (return target)
+    input   logic                               ifu2exu_bp_ras_vd_i,        // predicted return
+    input   logic [`SCR1_XLEN-1:0]              ifu2exu_bp_ras_target_i     // predicted return target
+`endif // SCR1_BP_RAS_EN
 );
 
 //------------------------------------------------------------------------------
@@ -255,6 +261,23 @@ logic [`SCR1_XLEN-1:0]              jb_new_pc;
 `ifndef SCR1_RVC_EXT
 logic                               jb_misalign;
 `endif
+
+// Static branch predictor signals - mirror of scr1_pipe_bpred in the IFU
+logic                               bp_taken;           // predictor: this instr was predicted taken
+logic                               bp_mispredict;      // prediction != actual outcome
+logic                               bp_recover_seq;     // predicted taken, resolved not-taken
+logic                               pc_curr_transfer;   // architectural control transfer this cycle
+
+`ifdef SCR1_BP_RAS_EN
+// Return Address Stack prediction, carried from the IFU and checked here
+logic                               exu_bp_ras_vd;      // current instr is a predicted return
+logic [`SCR1_XLEN-1:0]              exu_bp_ras_target;  // predicted return target
+logic                               ras_hit;            // RAS predicted the return target correctly
+`ifndef SCR1_NO_EXE_STAGE
+logic                               bp_ras_vd_ff;
+logic [`SCR1_XLEN-1:0]              bp_ras_target_ff;
+`endif // SCR1_NO_EXE_STAGE
+`endif // SCR1_BP_RAS_EN
 
 // Current PC register
 logic                               pc_curr_upd;
@@ -355,6 +378,10 @@ always_ff @(posedge clk) begin
         exu_queue.exc_code       <= idu2exu_cmd_i.exc_code;
         idu2exu_use_rs1_ff       <= idu2exu_use_rs1_i;
         idu2exu_use_rs2_ff       <= idu2exu_use_rs2_i;
+`ifdef SCR1_BP_RAS_EN
+        bp_ras_vd_ff             <= ifu2exu_bp_ras_vd_i;
+        bp_ras_target_ff         <= ifu2exu_bp_ras_target_i;
+`endif // SCR1_BP_RAS_EN
         if (idu2exu_use_rs1_i) begin
             exu_queue.rs1_addr   <= idu2exu_cmd_i.rs1_addr;
         end
@@ -697,7 +724,7 @@ assign inc_pc = pc_curr_ff + (exu_queue.instr_rvc ? `SCR1_XLEN'd2 : `SCR1_XLEN'd
 assign inc_pc = pc_curr_ff + `SCR1_XLEN'd4;
 `endif // ~SCR1_RVC_EXT
 
-assign pc_curr_next = exu2ifu_pc_new_req_o        ? exu2ifu_pc_new_o
+assign pc_curr_next = pc_curr_transfer            ? exu2ifu_pc_new_o
                     : (inc_pc[6] ^ pc_curr_ff[6]) ? inc_pc
                                                   : {pc_curr_ff[`SCR1_XLEN-1:6], inc_pc[5:0]};
 
@@ -715,11 +742,15 @@ always_comb begin
 `endif // SCR1_DBG_EN
         wfi_run_start_ff    : exu2ifu_pc_new_o = pc_curr_ff;
         exu_queue.fencei_req: exu2ifu_pc_new_o = inc_pc;
+        bp_recover_seq      : exu2ifu_pc_new_o = inc_pc;   // predicted taken, resolved not-taken (M2+)
         default             : exu2ifu_pc_new_o = ialu_addr_res & SCR1_JUMP_MASK;
     endcase
 end
 
-assign exu2ifu_pc_new_req_o = init_pc                                        // reset
+// Architectural control transfer this cycle. Drives the PC register and the
+// tracelog. Includes every taken jump/branch, independent of whether the fetch
+// was already redirected early by the branch predictor.
+assign pc_curr_transfer     = init_pc                                        // reset
                             | exu2csr_take_irq_o
                             | exu2csr_take_exc_o
                             | (exu2csr_mret_instr_o & ~csr2exu_mstatus_mie_up_i)
@@ -734,10 +765,56 @@ assign exu2ifu_pc_new_req_o = init_pc                                        // 
 `endif // SCR1_DBG_EN
                             | (exu_queue_vd & jb_taken);
 
+// Fetch-redirect request to the IFU. Same events as the architectural transfer,
+// but for jumps/branches only when the static predictor mispredicted (a
+// correctly predicted taken jump/branch needs no flush - that is the M1 win).
+assign exu2ifu_pc_new_req_o = init_pc                                        // reset
+                            | exu2csr_take_irq_o
+                            | exu2csr_take_exc_o
+                            | (exu2csr_mret_instr_o & ~csr2exu_mstatus_mie_up_i)
+                            | (exu_queue_vd & exu_queue.fencei_req)
+                            | (wfi_run_start_ff
+`ifdef SCR1_CLKCTRL_EN
+                            & clk_pipe_en
+`endif // SCR1_CLKCTRL_EN
+                            )
+`ifdef SCR1_DBG_EN
+                            | dbg_run_start_npbuf
+`endif // SCR1_DBG_EN
+                            | (exu_queue_vd & bp_mispredict);
+
 // Jump/branch signals
 assign branch_taken = exu_queue.branch_req & ialu_cmp;
 assign jb_taken     = exu_queue.jump_req | branch_taken;
 assign jb_new_pc    = ialu_addr_res & SCR1_JUMP_MASK;
+
+// Static predictor mirror (full: M1 JAL + M2 branches + M3 RVC). Must match
+// scr1_pipe_bpred in the IFU exactly, so mispredict recovery redirects correctly.
+//   direct jumps (JAL, c.j, c.jal) : jump_req & sum2_op==PC_IMM -> always taken
+//   backward branches (bXX, c.beqz/c.bnez) : branch_req & imm[31] (negative offset)
+//   JALR (indirect, sum2_op==REG_IMM)      : not predicted -> mispredict->redirect
+`ifdef SCR1_BPRED_EN
+assign bp_taken       = (exu_queue.jump_req   & (exu_queue.sum2_op == SCR1_SUM2_OP_PC_IMM))
+                      | (exu_queue.branch_req &  exu_queue.imm[`SCR1_XLEN-1]);
+`else // SCR1_BPRED_EN
+assign bp_taken       = 1'b0;    // predictor disabled -> mispredict==jb_taken (original)
+`endif // SCR1_BPRED_EN
+`ifdef SCR1_BP_RAS_EN
+// Select the carried RAS prediction (registered in the EXE stage, or direct)
+`ifndef SCR1_NO_EXE_STAGE
+assign exu_bp_ras_vd     = bp_ras_vd_ff;
+assign exu_bp_ras_target = bp_ras_target_ff;
+`else // SCR1_NO_EXE_STAGE
+assign exu_bp_ras_vd     = ifu2exu_bp_ras_vd_i;
+assign exu_bp_ras_target = ifu2exu_bp_ras_target_i;
+`endif // SCR1_NO_EXE_STAGE
+// Correctly predicted return: RAS gave the exact actual target -> suppress flush.
+assign ras_hit        = exu_bp_ras_vd & (jb_new_pc == exu_bp_ras_target);
+assign bp_mispredict  = (jb_taken ^ bp_taken) & ~ras_hit;
+`else // SCR1_BP_RAS_EN
+assign bp_mispredict  = jb_taken ^ bp_taken;
+`endif // SCR1_BP_RAS_EN
+assign bp_recover_seq = exu_queue_vd & bp_mispredict & ~jb_taken;
 
 // PC to be loaded on MRET from interrupt trap
 assign exu2csr_pc_next_o  = ~exu_queue_vd ? pc_curr_ff
@@ -1027,7 +1104,7 @@ assign update_pc_en = (init_pc | exu2pipe_instret_o | exu2csr_take_irq_o)
                     & ~hdu2exu_pc_advmt_dsbl_i & ~hdu2exu_no_commit_i
 `endif // SCR1_DBG_EN
                     ;
-assign update_pc    = exu2ifu_pc_new_req_o ? exu2ifu_pc_new_o : inc_pc;
+assign update_pc    = pc_curr_transfer ? exu2ifu_pc_new_o : inc_pc;
 
 
 //------------------------------------------------------------------------------

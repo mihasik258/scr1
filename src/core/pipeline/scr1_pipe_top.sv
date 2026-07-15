@@ -139,6 +139,10 @@ logic [`SCR1_IMEM_DWIDTH-1:0]               ifu2idu_instr;          // IFU instr
 logic                                       ifu2idu_imem_err;       // IFU instruction access fault
 logic                                       ifu2idu_err_rvi_hi;     // 1 - imem fault when trying to fetch second half of an unaligned RVI instruction
 logic                                       idu2ifu_rdy;            // IDU ready for new data
+`ifdef SCR1_BP_RAS_EN
+logic                                       ifu2exu_bp_ras_vd;      // RAS predicted return
+logic [`SCR1_XLEN-1:0]                       ifu2exu_bp_ras_target;  // RAS predicted return target
+`endif // SCR1_BP_RAS_EN
 
 // IDU <-> EXU
 logic                                       idu2exu_req;            // IDU request
@@ -332,6 +336,11 @@ scr1_pipe_ifu i_pipe_ifu (
     .ifu2idu_imem_err_o       (ifu2idu_imem_err   ),
     .ifu2idu_err_rvi_hi_o     (ifu2idu_err_rvi_hi ),
     .ifu2idu_vd_o             (ifu2idu_vd         )
+`ifdef SCR1_BP_RAS_EN
+    ,
+    .ifu2exu_bp_ras_vd_o      (ifu2exu_bp_ras_vd    ),
+    .ifu2exu_bp_ras_target_o  (ifu2exu_bp_ras_target)
+`endif // SCR1_BP_RAS_EN
 );
 
 //-------------------------------------------------------------------------------
@@ -469,6 +478,11 @@ scr1_pipe_exu i_pipe_exu (
     .exu2csr_pc_next_o              (next_pc                 ),
     .exu2ifu_pc_new_req_o           (new_pc_req              ),
     .exu2ifu_pc_new_o               (new_pc                  )
+`ifdef SCR1_BP_RAS_EN
+    ,
+    .ifu2exu_bp_ras_vd_i            (ifu2exu_bp_ras_vd       ),
+    .ifu2exu_bp_ras_target_i        (ifu2exu_bp_ras_target   )
+`endif // SCR1_BP_RAS_EN
 );
 
 //-------------------------------------------------------------------------------

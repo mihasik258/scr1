@@ -155,6 +155,15 @@ parameter int unsigned SCR1_TDU_TRIG_NUM = 2;   // number of hardware triggers
 // CORE INTEGRATION OPTIONS
 //------------------------------------------------------------------------------
 
+// Static branch predictor (BTFN, milestone M1: JAL only).
+// When commented out, the core is bit-identical to the original (no prediction).
+`define SCR1_BPRED_EN
+
+// Return Address Stack: predict `ret` (JALR) targets. Requires SCR1_BPRED_EN.
+// When commented out -> returns behave as before (always redirect in EXU).
+`define SCR1_BP_RAS_EN
+parameter int unsigned SCR1_RAS_DEPTH = 4;   // RAS depth (call nesting covered)
+
 // Bypasses on AXI/AHB bridge I/O
 `define SCR1_IMEM_AHB_IN_BP         // bypass instruction memory AHB bridge input register
 `define SCR1_IMEM_AHB_OUT_BP        // bypass instruction memory AHB bridge output register
