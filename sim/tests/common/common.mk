@@ -3,7 +3,7 @@ ADD_ASM_MACRO ?= -D__ASSEMBLY__=1
 FLAGS = -O3 -funroll-loops -fpeel-loops -fgcse-sm -fgcse-las $(ADD_FLAGS)
 FLAGS_STR = "$(FLAGS)"
 
-CFLAGS_COMMON = -static -std=gnu99 -fno-common -fno-builtin-printf -DTCM=$(TCM)
+CFLAGS_COMMON = -static -std=gnu99 -fno-common -fno-builtin-printf -DTCM=$(TCM) --specs=picolibc.specs
 CFLAGS_ARCH = -Wa,-march=rv32$(ARCH)_zicsr_zifencei -march=rv32$(ARCH)_zicsr_zifencei -mabi=$(ABI)
 
 CFLAGS := $(FLAGS) $(EXT_CFLAGS) \
@@ -12,7 +12,7 @@ $(CFLAGS_ARCH) \
 -DFLAGS_STR=\"$(FLAGS_STR)\" \
 $(ADD_CFLAGS)
 
-LDFLAGS   ?= -nostartfiles -nostdlib -lc -lgcc -march=rv32$(ARCH)_zicsr_zifencei -mabi=$(ABI) --specs=nano.specs $(ADD_LDFLAGS)
+LDFLAGS   ?= -nostartfiles -lc -lgcc -march=rv32$(ARCH)_zicsr_zifencei -mabi=$(ABI) --specs=picolibc.specs $(ADD_LDFLAGS)
 
 ifeq (,$(findstring 0,$(TCM)))
 ld_script ?= $(inc_dir)/link_tcm.ld
