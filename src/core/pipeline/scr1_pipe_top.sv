@@ -143,6 +143,13 @@ logic                                       idu2ifu_rdy;            // IDU ready
 logic                                       ifu2exu_bp_ras_vd;      // RAS predicted return
 logic [`SCR1_XLEN-1:0]                       ifu2exu_bp_ras_target;  // RAS predicted return target
 `endif // SCR1_BP_RAS_EN
+`ifdef SCR1_BP_DYNAMIC
+logic                                       ifu2exu_bp_predicted_taken; // carried predicted direction
+logic [SCR1_BP_BHT_IDX_W-1:0]               ifu2exu_bp_index;           // carried BHT index
+logic                                       exu2ifu_bp_upd_vd;          // BHT training valid
+logic [SCR1_BP_BHT_IDX_W-1:0]               exu2ifu_bp_upd_index;       // BHT training index
+logic                                       exu2ifu_bp_upd_taken;       // BHT training outcome
+`endif // SCR1_BP_DYNAMIC
 
 // IDU <-> EXU
 logic                                       idu2exu_req;            // IDU request
@@ -341,6 +348,14 @@ scr1_pipe_ifu i_pipe_ifu (
     .ifu2exu_bp_ras_vd_o      (ifu2exu_bp_ras_vd    ),
     .ifu2exu_bp_ras_target_o  (ifu2exu_bp_ras_target)
 `endif // SCR1_BP_RAS_EN
+`ifdef SCR1_BP_DYNAMIC
+    ,
+    .ifu2exu_bp_predicted_taken_o (ifu2exu_bp_predicted_taken),
+    .ifu2exu_bp_index_o           (ifu2exu_bp_index          ),
+    .exu2ifu_bp_upd_vd_i          (exu2ifu_bp_upd_vd         ),
+    .exu2ifu_bp_upd_index_i       (exu2ifu_bp_upd_index      ),
+    .exu2ifu_bp_upd_taken_i       (exu2ifu_bp_upd_taken      )
+`endif // SCR1_BP_DYNAMIC
 );
 
 //-------------------------------------------------------------------------------
@@ -483,6 +498,14 @@ scr1_pipe_exu i_pipe_exu (
     .ifu2exu_bp_ras_vd_i            (ifu2exu_bp_ras_vd       ),
     .ifu2exu_bp_ras_target_i        (ifu2exu_bp_ras_target   )
 `endif // SCR1_BP_RAS_EN
+`ifdef SCR1_BP_DYNAMIC
+    ,
+    .ifu2exu_bp_predicted_taken_i   (ifu2exu_bp_predicted_taken),
+    .ifu2exu_bp_index_i             (ifu2exu_bp_index          ),
+    .exu2ifu_bp_upd_vd_o            (exu2ifu_bp_upd_vd         ),
+    .exu2ifu_bp_upd_index_o         (exu2ifu_bp_upd_index      ),
+    .exu2ifu_bp_upd_taken_o         (exu2ifu_bp_upd_taken      )
+`endif // SCR1_BP_DYNAMIC
 );
 
 //-------------------------------------------------------------------------------

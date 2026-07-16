@@ -37,6 +37,13 @@ module scr1_pipe_bpred #(
     // Static prediction for the supplied instruction
     output  logic                       bp_predict_taken_o,     // predicted taken
     output  logic [`SCR1_XLEN-1:0]      bp_predict_pc_o         // predicted target PC
+`ifdef SCR1_BP_DYNAMIC
+    ,
+    // Dynamic direction from the BHT (D1). When the entry is untrained
+    // (bp_bht_valid_i == 0) the module falls back to the static BTFN rule.
+    input   logic                       bp_bht_valid_i,         // BHT entry trained
+    input   logic                       bp_bht_taken_i          // BHT predicted direction
+`endif // SCR1_BP_DYNAMIC
 );
 
 // RISC-V opcodes (were ibex_pkg enums in the original)
@@ -98,8 +105,19 @@ always_comb begin
     endcase
 end
 
+`ifdef SCR1_BP_DYNAMIC
+// Dynamic direction for conditional branches: use the BHT counter when the
+// entry has been trained, otherwise fall back to the static BTFN rule (taken
+// iff the branch offset is negative). Jumps stay always-taken (below).
+logic                   cond_btfn;
+logic                   cond_taken;
+assign cond_btfn  = instr_b ? imm_b_type[31] : imm_cb_type[31];
+assign cond_taken = bp_bht_valid_i ? bp_bht_taken_i : cond_btfn;
+assign instr_b_taken = (instr_b | instr_cb) & cond_taken;
+`else // SCR1_BP_DYNAMIC
 // BTFN: taken if the offset is negative
 assign instr_b_taken = (instr_b & imm_b_type[31]) | (instr_cb & imm_cb_type[31]);
+`endif // SCR1_BP_DYNAMIC
 
 // Jumps always taken, otherwise use instr_b_taken
 assign bp_predict_taken_o = bp_vd_i & (instr_j | instr_cj | instr_b_taken);

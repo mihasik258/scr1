@@ -74,6 +74,16 @@ module scr1_pipe_ifu
     output  logic                                   ifu2exu_bp_ras_vd_o,        // this instr is a predicted return
     output  logic [`SCR1_XLEN-1:0]                  ifu2exu_bp_ras_target_o     // predicted return target (RAS top)
 `endif // SCR1_BP_RAS_EN
+`ifdef SCR1_BP_DYNAMIC
+    ,
+    // IFU -> EXU: dynamic-predictor metadata carried with the instruction (D0)
+    output  logic                                   ifu2exu_bp_predicted_taken_o, // direction predicted for this instr
+    output  logic [SCR1_BP_BHT_IDX_W-1:0]           ifu2exu_bp_index_o,           // BHT index used at fetch (for training)
+    // EXU -> IFU: BHT training channel (D0: connected but not yet consumed here)
+    input   logic                                   exu2ifu_bp_upd_vd_i,          // a conditional branch resolved
+    input   logic [SCR1_BP_BHT_IDX_W-1:0]           exu2ifu_bp_upd_index_i,       // BHT index to update
+    input   logic                                   exu2ifu_bp_upd_taken_i        // actual taken outcome
+`endif // SCR1_BP_DYNAMIC
 );
 
 //------------------------------------------------------------------------------
@@ -815,6 +825,31 @@ always_ff @(posedge clk, negedge rst_n) begin
     end
 end
 
+`ifdef SCR1_BP_DYNAMIC
+//------------------------------------------------------------------------------
+// Branch History Table (D1): dynamic direction for conditional branches
+//------------------------------------------------------------------------------
+// Read by the shadow PC (same index carried to EXU for training); trained from
+// the EXU->IFU channel on every resolved conditional branch. Feeds the
+// direction decision inside scr1_pipe_bpred (BTFN fallback when untrained).
+logic                              bht_valid;
+logic                              bht_taken;
+
+scr1_pipe_bht #(
+    .SCR1_BHT_SIZE  (SCR1_BP_BHT_SIZE ),
+    .SCR1_BHT_IDX_W (SCR1_BP_BHT_IDX_W)
+) i_bht (
+    .clk             (clk                             ),
+    .rst_n           (rst_n                           ),
+    .bht_rindex_i    (ifu_head_pc[SCR1_BP_BHT_IDX_W:1]),
+    .bht_valid_o     (bht_valid                       ),
+    .bht_taken_o     (bht_taken                       ),
+    .bht_upd_vd_i    (exu2ifu_bp_upd_vd_i             ),
+    .bht_upd_index_i (exu2ifu_bp_upd_index_i          ),
+    .bht_upd_taken_i (exu2ifu_bp_upd_taken_i          )
+);
+`endif // SCR1_BP_DYNAMIC
+
 // Static predictor (adapted from Ibex ibex_branch_predict): direction + PC+imm target.
 scr1_pipe_bpred #(
     .SCR1_BP_PREDICT_BRANCHES (1'b1),   // M2: predict conditional branches (BTFN)
@@ -827,6 +862,11 @@ scr1_pipe_bpred #(
     .bp_vd_i            (ifu2idu_vd_o & ~ifu2idu_imem_err_o),
     .bp_predict_taken_o (bp_predict_taken  ),
     .bp_predict_pc_o    (bp_predict_pc     )
+`ifdef SCR1_BP_DYNAMIC
+    ,
+    .bp_bht_valid_i     (bht_valid         ),
+    .bp_bht_taken_i     (bht_taken         )
+`endif // SCR1_BP_DYNAMIC
 );
 
 `ifdef SCR1_BP_RAS_EN
@@ -905,6 +945,19 @@ assign bp_redirect_req = 1'b0;   // predictor disabled -> IFU behaves as origina
 // Effective New PC request/value for the IFU datapath. EXU redirect wins.
 assign pc_new_req_i2 = exu2ifu_pc_new_req_i | bp_redirect_req;
 assign pc_new_i2     = exu2ifu_pc_new_req_i ? exu2ifu_pc_new_i : bp_any_target;
+
+`ifdef SCR1_BP_DYNAMIC
+//------------------------------------------------------------------------------
+// Dynamic branch predictor - D0 scaffolding (no functional change yet)
+//------------------------------------------------------------------------------
+// Carry the predicted direction and the BHT index to EXU alongside the
+// instruction. The index is the shadow-PC (RVC => 2-byte aligned, so from
+// bit 1). Today the direction still comes from the static BTFN block; D1
+// replaces bp_predict_taken's source with a BHT read indexed by this same
+// ifu_head_pc, and consumes the exu2ifu_bp_upd_* training channel below.
+assign ifu2exu_bp_predicted_taken_o = bp_predict_taken;
+assign ifu2exu_bp_index_o           = ifu_head_pc[SCR1_BP_BHT_IDX_W:1];
+`endif // SCR1_BP_DYNAMIC
 
 `ifdef SCR1_TRGT_SIMULATION
 
