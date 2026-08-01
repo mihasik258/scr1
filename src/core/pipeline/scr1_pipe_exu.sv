@@ -175,6 +175,14 @@ module scr1_pipe_exu (
     output  logic [SCR1_BP_BHT_IDX_W-1:0]       exu2ifu_bp_upd_index_o,
     output  logic                               exu2ifu_bp_upd_taken_o
 `endif // SCR1_BP_DYNAMIC
+`ifdef SCR1_BP_BTB
+    ,
+    // EXU -> IFU: early-BTB training channel (resolved taken direct branch/jump)
+    output  logic                               exu2ifu_bp_btb_upd_vd_o,
+    output  logic [`SCR1_XLEN-1:0]              exu2ifu_bp_btb_upd_pc_o,
+    output  logic [`SCR1_XLEN-1:0]              exu2ifu_bp_btb_upd_target_o,
+    output  logic                               exu2ifu_bp_btb_upd_safe_o
+`endif // SCR1_BP_BTB
 );
 
 //------------------------------------------------------------------------------
@@ -872,6 +880,21 @@ assign exu2ifu_bp_upd_vd_o    = exu_queue_vd & exu_queue.branch_req & exu_rdy; /
 assign exu2ifu_bp_upd_index_o = exu_bp_index;
 assign exu2ifu_bp_upd_taken_o = branch_taken;
 `endif // SCR1_BP_DYNAMIC
+
+`ifdef SCR1_BP_BTB
+// Early-BTB training: cache the target of resolved TAKEN branches/jumps with a
+// deterministic (direct) target. JALR/returns are indirect -> RAS territory, not
+// trained here. One-shot at retire (exu_rdy) so a stalled branch trains once.
+logic btb_train_taken;
+assign btb_train_taken = branch_taken                                            // taken conditional branch
+                       | (exu_queue.jump_req & (exu_queue.sum2_op == SCR1_SUM2_OP_PC_IMM)); // direct jump (JAL/c.j/c.jal)
+assign exu2ifu_bp_btb_upd_vd_o     = exu_queue_vd & exu_rdy & btb_train_taken;
+assign exu2ifu_bp_btb_upd_pc_o     = pc_curr_ff;
+assign exu2ifu_bp_btb_upd_target_o = jb_new_pc;
+// safe = branch ends on a fetch-word boundary (RVI-aligned or RVC in high half):
+// only such branches may steer the fetch (their target is the very next word).
+assign exu2ifu_bp_btb_upd_safe_o   = ~(pc_curr_ff[1] ^ exu_queue.instr_rvc);
+`endif // SCR1_BP_BTB
 
 // PC to be loaded on MRET from interrupt trap
 assign exu2csr_pc_next_o  = ~exu_queue_vd ? pc_curr_ff

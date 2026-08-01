@@ -150,6 +150,12 @@ logic                                       exu2ifu_bp_upd_vd;          // BHT t
 logic [SCR1_BP_BHT_IDX_W-1:0]               exu2ifu_bp_upd_index;       // BHT training index
 logic                                       exu2ifu_bp_upd_taken;       // BHT training outcome
 `endif // SCR1_BP_DYNAMIC
+`ifdef SCR1_BP_BTB
+logic                                       exu2ifu_bp_btb_upd_vd;      // BTB training valid
+logic [`SCR1_XLEN-1:0]                       exu2ifu_bp_btb_upd_pc;      // BTB training branch PC
+logic [`SCR1_XLEN-1:0]                       exu2ifu_bp_btb_upd_target;  // BTB training target
+logic                                       exu2ifu_bp_btb_upd_safe;    // BTB training safe-to-steer bit
+`endif // SCR1_BP_BTB
 
 // IDU <-> EXU
 logic                                       idu2exu_req;            // IDU request
@@ -356,6 +362,13 @@ scr1_pipe_ifu i_pipe_ifu (
     .exu2ifu_bp_upd_index_i       (exu2ifu_bp_upd_index      ),
     .exu2ifu_bp_upd_taken_i       (exu2ifu_bp_upd_taken      )
 `endif // SCR1_BP_DYNAMIC
+`ifdef SCR1_BP_BTB
+    ,
+    .exu2ifu_bp_btb_upd_vd_i      (exu2ifu_bp_btb_upd_vd     ),
+    .exu2ifu_bp_btb_upd_pc_i      (exu2ifu_bp_btb_upd_pc     ),
+    .exu2ifu_bp_btb_upd_target_i  (exu2ifu_bp_btb_upd_target ),
+    .exu2ifu_bp_btb_upd_safe_i    (exu2ifu_bp_btb_upd_safe   )
+`endif // SCR1_BP_BTB
 );
 
 //-------------------------------------------------------------------------------
@@ -506,6 +519,13 @@ scr1_pipe_exu i_pipe_exu (
     .exu2ifu_bp_upd_index_o         (exu2ifu_bp_upd_index      ),
     .exu2ifu_bp_upd_taken_o         (exu2ifu_bp_upd_taken      )
 `endif // SCR1_BP_DYNAMIC
+`ifdef SCR1_BP_BTB
+    ,
+    .exu2ifu_bp_btb_upd_vd_o        (exu2ifu_bp_btb_upd_vd     ),
+    .exu2ifu_bp_btb_upd_pc_o        (exu2ifu_bp_btb_upd_pc     ),
+    .exu2ifu_bp_btb_upd_target_o    (exu2ifu_bp_btb_upd_target ),
+    .exu2ifu_bp_btb_upd_safe_o      (exu2ifu_bp_btb_upd_safe   )
+`endif // SCR1_BP_BTB
 );
 
 //-------------------------------------------------------------------------------

@@ -172,6 +172,13 @@ parameter int unsigned SCR1_RAS_DEPTH = 4;   // RAS depth (call nesting covered)
 parameter int unsigned SCR1_BP_BHT_SIZE  = 1024;                     // BHT entries (2-bit saturating counters), used from D1
 parameter int unsigned SCR1_BP_BHT_IDX_W = $clog2(SCR1_BP_BHT_SIZE); // BHT index width
 
+// Early Branch Target Buffer (fetch-PC-indexed target cache). Requires SCR1_BPRED_EN.
+// Stage B1: BTB is trained and read for measurement only (hit/target correctness),
+// it does NOT steer fetch yet -> no behavioural change while measuring.
+`define SCR1_BP_BTB
+parameter int unsigned SCR1_BP_BTB_SIZE  = 256;                      // BTB entries (directly-mapped, {valid,target})
+parameter int unsigned SCR1_BP_BTB_IDX_W = $clog2(SCR1_BP_BTB_SIZE); // BTB index width
+
 // Bypasses on AXI/AHB bridge I/O
 `define SCR1_IMEM_AHB_IN_BP         // bypass instruction memory AHB bridge input register
 `define SCR1_IMEM_AHB_OUT_BP        // bypass instruction memory AHB bridge output register

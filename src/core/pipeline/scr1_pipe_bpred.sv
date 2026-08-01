@@ -36,7 +36,8 @@ module scr1_pipe_bpred #(
 
     // Static prediction for the supplied instruction
     output  logic                       bp_predict_taken_o,     // predicted taken
-    output  logic [`SCR1_XLEN-1:0]      bp_predict_pc_o         // predicted target PC
+    output  logic [`SCR1_XLEN-1:0]      bp_predict_pc_o,        // predicted target PC
+    output  logic                       bp_is_branch_o          // instr is a branch/jump (used by B2 early-BTB steer)
 `ifdef SCR1_BP_DYNAMIC
     ,
     // Dynamic direction from the BHT (D1). When the entry is untrained
@@ -122,6 +123,9 @@ assign instr_b_taken = (instr_b & imm_b_type[31]) | (instr_cb & imm_cb_type[31])
 // Jumps always taken, otherwise use instr_b_taken
 assign bp_predict_taken_o = bp_vd_i & (instr_j | instr_cj | instr_b_taken);
 assign bp_predict_pc_o    = bp_pc_i + branch_imm;
+// Head instruction is a (direct) branch or jump - lets the IFU identify a
+// BTB-steered branch at the queue output even when BTFN predicts not-taken.
+assign bp_is_branch_o     = bp_vd_i & (instr_j | instr_b | instr_cj | instr_cb);
 
 `ifdef SCR1_TRGT_SIMULATION
 SCR1_SVA_BPRED_ONEHOT : assert property (

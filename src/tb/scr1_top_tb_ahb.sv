@@ -389,5 +389,88 @@ scr1_memory_tb_ahb #(
     .dmem_hresp             (dmem_hresp )
 );
 
+//-------------------------------------------------------------------------------
+// Phase-0 branch-predictor profiling (tb-only, opt-in via -DSCR1_BP_PROFILE).
+// Pure observation of DUT signals: no drive, no effect on core logic/timing.
+//-------------------------------------------------------------------------------
+`ifdef SCR1_BP_PROFILE
+longint unsigned bpp_cycles    = 0;  // clocks after reset deassert
+longint unsigned bpp_instret   = 0;  // retired instructions  -> IPC
+longint unsigned bpp_branches  = 0;  // retired branches+jumps -> branch density
+longint unsigned bpp_mispred   = 0;  // mispredicts            -> MPKI
+longint unsigned bpp_fe_bubble = 0;  // frontend starvation: IDU ready but IFU not valid
+// Phase-0.b: split the frontend bubble by cause (which lever addresses it)
+longint unsigned bpp_bp_redir  = 0;  // predicted-taken redirects (late, at queue output)
+longint unsigned bpp_exu_redir = 0;  // EXU redirects (mispredict/trap)
+longint unsigned bpp_bub_bp    = 0;  // bubbles in shadow of a bp redirect  -> EARLY BTB addressable
+longint unsigned bpp_bub_exu   = 0;  // bubbles in shadow of an EXU redirect -> accuracy addressable
+longint unsigned bpp_bub_other = 0;  // bubbles not near any redirect        -> inherent (queue/mem)
+int unsigned     bpp_bp_shadow  = 0;
+int unsigned     bpp_exu_shadow = 0;
+localparam int unsigned BPP_W = 2;   // shadow window (cycles) after a redirect
+// Stage B1: early-BTB coverage/correctness, evaluated at each taken redirect
+longint unsigned bpp_btb_cover   = 0; // taken redirect where BTB already had an entry
+longint unsigned bpp_btb_correct = 0; // ... and the cached target matched the actual target
+
+always_ff @(posedge clk) begin
+    if (rst_n) begin
+        bpp_cycles <= bpp_cycles + 1;
+        if (i_top.i_core_top.i_pipe_top.instret)
+            bpp_instret <= bpp_instret + 1;
+        if (i_top.i_core_top.i_pipe_top.instret &
+            (i_top.i_core_top.i_pipe_top.i_pipe_exu.exu_queue.branch_req |
+             i_top.i_core_top.i_pipe_top.i_pipe_exu.exu_queue.jump_req))
+            bpp_branches <= bpp_branches + 1;
+`ifdef SCR1_BPRED_EN
+        if (i_top.i_core_top.i_pipe_top.instret &
+            i_top.i_core_top.i_pipe_top.i_pipe_exu.bp_mispredict)
+            bpp_mispred <= bpp_mispred + 1;
+`endif // SCR1_BPRED_EN
+`ifdef SCR1_BP_BTB
+        // B2: count committed BTB-steered branches (early redirect, no flush)
+        if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_steer_commit)
+            bpp_btb_correct <= bpp_btb_correct + 1;
+`endif // SCR1_BP_BTB
+        // --- redirect events + shadow windows (Phase-0.b) ---
+`ifdef SCR1_BPRED_EN
+        if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_redirect_req) begin
+            bpp_bp_redir <= bpp_bp_redir + 1;
+            bpp_bp_shadow <= BPP_W;
+        end else if (bpp_bp_shadow != 0)
+            bpp_bp_shadow <= bpp_bp_shadow - 1;
+`endif // SCR1_BPRED_EN
+        if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.exu2ifu_pc_new_req_i) begin
+            bpp_exu_redir <= bpp_exu_redir + 1;
+            bpp_exu_shadow <= BPP_W;
+        end else if (bpp_exu_shadow != 0)
+            bpp_exu_shadow <= bpp_exu_shadow - 1;
+        // --- classify each bubble cycle by nearest redirect cause ---
+        if (i_top.i_core_top.i_pipe_top.idu2ifu_rdy &
+            ~i_top.i_core_top.i_pipe_top.ifu2idu_vd) begin
+            bpp_fe_bubble <= bpp_fe_bubble + 1;
+`ifdef SCR1_BPRED_EN
+            if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_redirect_req | (bpp_bp_shadow != 0))
+                bpp_bub_bp <= bpp_bub_bp + 1;
+            else
+`endif // SCR1_BPRED_EN
+            if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.exu2ifu_pc_new_req_i | (bpp_exu_shadow != 0))
+                bpp_bub_exu <= bpp_bub_exu + 1;
+            else
+                bpp_bub_other <= bpp_bub_other + 1;
+        end
+    end
+end
+
+final begin
+    $display("BP_PROFILE cycles=%0d instret=%0d branches=%0d mispred=%0d fe_bubble=%0d",
+             bpp_cycles, bpp_instret, bpp_branches, bpp_mispred, bpp_fe_bubble);
+    $display("BP_PROFILE2 bp_redir=%0d exu_redir=%0d bub_bp=%0d bub_exu=%0d bub_other=%0d",
+             bpp_bp_redir, bpp_exu_redir, bpp_bub_bp, bpp_bub_exu, bpp_bub_other);
+`ifdef SCR1_BP_BTB
+    $display("BP_PROFILE3 btb_steered_branches=%0d", bpp_btb_correct);
+`endif // SCR1_BP_BTB
+end
+`endif // SCR1_BP_PROFILE
+
 endmodule : scr1_top_tb_ahb
 
