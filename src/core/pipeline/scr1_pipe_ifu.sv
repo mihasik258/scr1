@@ -281,6 +281,7 @@ logic                               q_steered [SCR1_IFU_Q_SIZE_HALF]; // per-hal
 // steer-flag FIFO carrying the fetch-time steer decision to the response/enqueue
 localparam int unsigned SCR1_STEER_FIFO_DEPTH = 8;
 logic                               steer_fifo [SCR1_STEER_FIFO_DEPTH];
+logic                               steer_fifo_unal [SCR1_STEER_FIFO_DEPTH]; // target[1] of the steer
 logic [2:0]                         steer_fifo_wptr;
 logic [2:0]                         steer_fifo_rptr;
 `endif // SCR1_BP_BTB
@@ -331,6 +332,13 @@ end
 
 assign new_pc_unaligned_next = pc_new_req_i2 ? pc_new_i2[1]
                              : ~imem_resp_vd  ? new_pc_unaligned_ff
+`ifdef SCR1_BP_BTB
+                             // A steered branch word: the NEXT response is its
+                             // target word, whose low half must be skipped when
+                             // the target is unaligned. The branch word itself
+                             // already enqueued with the current (correct) flag.
+                             : steer_resp      ? steer_unal_resp
+`endif // SCR1_BP_BTB
                                               : 1'b0;
 
 // Instruction type decoder
@@ -921,13 +929,12 @@ scr1_pipe_btb #(
 // NEXT fetch address (no queue flush): the branch's own word is still fetched
 // and enqueued, then the target is fetched right behind it.
 logic                              btb_steer_req;      // steer the next fetch this cycle
-// Steer ONLY safe (word-boundary-ending) branches with a word-ALIGNED target.
-//  - safe branch  => target is exactly the next fetch word (no same-word
-//    fall-through slips into the queue);
-//  - aligned target (target[1]==0) => the target word parses normally, so the
-//    non-flushing steer can bypass the new_pc_unaligned path safely.
-// Unsafe branches / unaligned targets fall back to the D1 late redirect.
-assign btb_steer_req = btb_hit_fetch & btb_safe_fetch & ~btb_target_fetch[1]
+// Steer ONLY safe (word-boundary-ending) branches. The target may now be
+// unaligned (target[1]==1): the target word's low half is skipped by driving
+// new_pc_unaligned for the target word (carried through the steer FIFO, applied
+// on the branch word's response - see below). Unsafe (RVC-low) branches still
+// fall back to the D1 late redirect.
+assign btb_steer_req = btb_hit_fetch & btb_safe_fetch
                      & imem_handshake_done & ifu_fsm_fetch
                      & ~pc_new_req_i2;                 // an architectural redirect wins
 
@@ -936,6 +943,7 @@ assign btb_steer_req = btb_hit_fetch & btb_safe_fetch & ~btb_target_fetch[1]
 // decoupled), so it rides a small FIFO popped on each imem response, and the
 // popped value marks the queue entry (q_steered) it lands in.
 logic                              steer_resp;         // steer flag for the response being written
+logic                              steer_unal_resp;    // steer target[1] for the response being written
 logic                              q_steered_head;     // head instruction belongs to a steered word
 // ends-on-word-boundary: the target is the very next queue entry only when the
 // consumed branch ends at a word boundary (RVI-aligned or RVC in the high half).
@@ -954,7 +962,8 @@ assign bp_seq_pc          = ifu_head_pc + (q_head_is_rvc ? `SCR1_XLEN'd2 : `SCR1
 // always trails the address handshake by >=1 cycle, so the FIFO is never popped
 // empty. Pushes/pops stay balanced across redirects because discarded responses
 // still pop (they just don't write q_steered, gated by q_wr_en below).
-assign steer_resp = steer_fifo[steer_fifo_rptr];
+assign steer_resp      = steer_fifo[steer_fifo_rptr];
+assign steer_unal_resp = steer_fifo_unal[steer_fifo_rptr];
 
 always_ff @(posedge clk, negedge rst_n) begin
     if (~rst_n) begin
@@ -962,8 +971,9 @@ always_ff @(posedge clk, negedge rst_n) begin
         steer_fifo_rptr <= '0;
     end else begin
         if (imem_handshake_done) begin
-            steer_fifo[steer_fifo_wptr] <= btb_steer_req;
-            steer_fifo_wptr             <= steer_fifo_wptr + 1'b1;
+            steer_fifo[steer_fifo_wptr]      <= btb_steer_req;
+            steer_fifo_unal[steer_fifo_wptr] <= btb_target_fetch[1]; // target alignment for the word AFTER this one
+            steer_fifo_wptr                  <= steer_fifo_wptr + 1'b1;
         end
         if (imem_resp_received) begin
             steer_fifo_rptr <= steer_fifo_rptr + 1'b1;
