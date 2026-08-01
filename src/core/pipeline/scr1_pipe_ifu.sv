@@ -98,15 +98,18 @@ module scr1_pipe_ifu
 // Local parameters declaration
 //------------------------------------------------------------------------------
 
-localparam SCR1_IFU_Q_SIZE_WORD     = 2;
+localparam SCR1_IFU_Q_SIZE_WORD     = SCR1_IFU_QUEUE_SIZE_WORD;   // config knob (arch_description.svh)
 localparam SCR1_IFU_Q_SIZE_HALF     = SCR1_IFU_Q_SIZE_WORD * 2;
-localparam SCR1_TXN_CNT_W           = 3;
 
 localparam SCR1_IFU_QUEUE_ADR_W     = $clog2(SCR1_IFU_Q_SIZE_HALF);
 localparam SCR1_IFU_QUEUE_PTR_W     = SCR1_IFU_QUEUE_ADR_W + 1;
 
 localparam SCR1_IFU_Q_FREE_H_W      = $clog2(SCR1_IFU_Q_SIZE_HALF + 1);
 localparam SCR1_IFU_Q_FREE_W_W      = $clog2(SCR1_IFU_Q_SIZE_WORD + 1);
+
+// Transaction-counter width must cover the free-word count so q_has_free_slots
+// never truncates (a fixed 3 hangs the IFU at depths >= 8). Keep >= 3.
+localparam SCR1_TXN_CNT_W           = (SCR1_IFU_Q_FREE_W_W > 3) ? SCR1_IFU_Q_FREE_W_W : 3;
 
 //------------------------------------------------------------------------------
 // Local types declaration

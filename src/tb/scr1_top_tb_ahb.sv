@@ -411,6 +411,11 @@ localparam int unsigned BPP_W = 2;   // shadow window (cycles) after a redirect
 // Stage B1: early-BTB coverage/correctness, evaluated at each taken redirect
 longint unsigned bpp_btb_cover   = 0; // taken redirect where BTB already had an entry
 longint unsigned bpp_btb_correct = 0; // ... and the cached target matched the actual target
+// Taken-transfer alignment classification (steerability): safe vs the unsafe cases
+longint unsigned bpp_taken_total = 0; // all taken jumps/branches retired
+longint unsigned bpp_taken_safe  = 0; // ends on a word boundary -> steerable
+longint unsigned bpp_taken_rvclo = 0; // RVC in the low half   -> the predecode wall
+longint unsigned bpp_taken_rviun = 0; // RVI on an odd halfword (word-straddling) -> also unsafe
 
 always_ff @(posedge clk) begin
     if (rst_n) begin
@@ -421,6 +426,16 @@ always_ff @(posedge clk) begin
             (i_top.i_core_top.i_pipe_top.i_pipe_exu.exu_queue.branch_req |
              i_top.i_core_top.i_pipe_top.i_pipe_exu.exu_queue.jump_req))
             bpp_branches <= bpp_branches + 1;
+        // classify each retired TAKEN transfer by steerability (rvc, pc[1])
+        if (i_top.i_core_top.i_pipe_top.instret &
+            i_top.i_core_top.i_pipe_top.i_pipe_exu.jb_taken) begin
+            automatic logic rvc = i_top.i_core_top.i_pipe_top.i_pipe_exu.exu_queue.instr_rvc;
+            automatic logic p1  = i_top.i_core_top.i_pipe_top.i_pipe_exu.pc_curr_ff[1];
+            bpp_taken_total <= bpp_taken_total + 1;
+            if (~(p1 ^ rvc))       bpp_taken_safe  <= bpp_taken_safe  + 1; // ends on word boundary
+            else if (rvc & ~p1)    bpp_taken_rvclo <= bpp_taken_rvclo + 1; // RVC low half
+            else                   bpp_taken_rviun <= bpp_taken_rviun + 1; // RVI odd half
+        end
 `ifdef SCR1_BPRED_EN
         if (i_top.i_core_top.i_pipe_top.instret &
             i_top.i_core_top.i_pipe_top.i_pipe_exu.bp_mispredict)
@@ -469,6 +484,8 @@ final begin
 `ifdef SCR1_BP_BTB
     $display("BP_PROFILE3 btb_steered_branches=%0d", bpp_btb_correct);
 `endif // SCR1_BP_BTB
+    $display("BP_PROFILE4 taken_total=%0d safe=%0d rvc_low=%0d rvi_unaligned=%0d",
+             bpp_taken_total, bpp_taken_safe, bpp_taken_rvclo, bpp_taken_rviun);
 end
 `endif // SCR1_BP_PROFILE
 

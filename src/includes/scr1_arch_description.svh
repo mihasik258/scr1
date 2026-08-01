@@ -179,6 +179,13 @@ parameter int unsigned SCR1_BP_BHT_IDX_W = $clog2(SCR1_BP_BHT_SIZE); // BHT inde
 parameter int unsigned SCR1_BP_BTB_SIZE  = 256;                      // BTB entries (directly-mapped, {valid,target})
 parameter int unsigned SCR1_BP_BTB_IDX_W = $clog2(SCR1_BP_BTB_SIZE); // BTB index width
 
+// IFU fetch-queue depth in 32-bit words. Upstream SCR1 hardcodes 2; a deeper
+// queue hides fetch latency and redirect refill - the dominant CoreMark
+// frontend cost (frontend starvation). 4 words is the measured saturation
+// point (8 is bit-identical). Exposed here as a real config knob; the IFU
+// derives its transaction-counter width from it so larger depths stay safe.
+parameter int unsigned SCR1_IFU_QUEUE_SIZE_WORD = 4;
+
 // Bypasses on AXI/AHB bridge I/O
 `define SCR1_IMEM_AHB_IN_BP         // bypass instruction memory AHB bridge input register
 `define SCR1_IMEM_AHB_OUT_BP        // bypass instruction memory AHB bridge output register
