@@ -174,6 +174,9 @@ TARGETS += coremark
 # Comment this target if you don't want to run the dhrystone
 TARGETS += dhrystone21
 
+# Comment this target if you don't want to run the qsort
+TARGETS += qsort
+
 # Comment this target if you don't want to run the hello test
 TARGETS += hello
 
@@ -214,6 +217,9 @@ dhrystone21: | $(bld_dir)
 
 coremark: | $(bld_dir)
 	-$(MAKE) -C $(tst_dir)/benchmarks/coremark EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
+qsort: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/benchmarks/qsort EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 
 riscv_isa: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/riscv_isa ARCH=$(ARCH)
