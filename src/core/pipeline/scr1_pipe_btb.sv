@@ -32,12 +32,15 @@ module scr1_pipe_btb #(
     output  logic                       btb_hit_o,          // entry valid for this index
     output  logic [`SCR1_XLEN-1:0]      btb_target_o,       // cached target
     output  logic                       btb_safe_o,         // branch ends on a fetch-word boundary (safe to steer)
+    output  logic                       btb_is_cond_o,      // entry is a conditional branch (else unconditional jump)
+    output  logic [SCR1_BP_BHT_IDX_W-1:0] btb_bht_index_o,  // BHT index of this branch (for the fetch-side gate)
 
     // Train port: pulse on a resolved TAKEN direct branch/jump
     input   logic                       btb_upd_vd_i,       // one-shot at retire
     input   logic [`SCR1_XLEN-1:0]      btb_upd_pc_i,       // PC of the branch/jump
     input   logic [`SCR1_XLEN-1:0]      btb_upd_target_i,   // resolved taken target
-    input   logic                       btb_upd_safe_i      // branch ends on a word boundary
+    input   logic                       btb_upd_safe_i,     // branch ends on a word boundary
+    input   logic                       btb_upd_is_cond_i   // resolved transfer is a conditional branch
 );
 
 localparam int unsigned SCR1_BTB_TAG_W = `SCR1_XLEN - (SCR1_BTB_IDX_W + 2);
@@ -62,6 +65,8 @@ logic [SCR1_BTB_SIZE-1:0]           valid_q;
 logic [SCR1_BTB_TAG_W-1:0]          tag_q    [SCR1_BTB_SIZE];
 logic [`SCR1_XLEN-1:0]              target_q [SCR1_BTB_SIZE];
 logic [SCR1_BTB_SIZE-1:0]           safe_q;
+logic [SCR1_BTB_SIZE-1:0]           is_cond_q;
+logic [SCR1_BP_BHT_IDX_W-1:0]       bht_index_q [SCR1_BTB_SIZE];
 
 always_ff @(posedge clk, negedge rst_n) begin
     if (~rst_n) begin
@@ -71,18 +76,24 @@ always_ff @(posedge clk, negedge rst_n) begin
     end
 end
 
-// Tag + target + safe memory (no reset: only read where valid_q is set)
+// Tag + target + safe + is_cond + bht_index memory (no reset: read only where valid_q set)
+// The branch's own BHT index is derived from its PC and stored, so the fetch-side
+// gate can read the BHT at exactly this branch's index without knowing pc[1] early.
 always_ff @(posedge clk) begin
     if (btb_upd_vd_i) begin
-        tag_q[wr_idx]    <= wr_tag;
-        target_q[wr_idx] <= btb_upd_target_i;
-        safe_q[wr_idx]   <= btb_upd_safe_i;
+        tag_q[wr_idx]       <= wr_tag;
+        target_q[wr_idx]    <= btb_upd_target_i;
+        safe_q[wr_idx]      <= btb_upd_safe_i;
+        is_cond_q[wr_idx]   <= btb_upd_is_cond_i;
+        bht_index_q[wr_idx] <= btb_upd_pc_i[SCR1_BP_BHT_IDX_W:1];
     end
 end
 
-assign btb_hit_o    = valid_q[rd_idx] & (tag_q[rd_idx] == rd_tag);
-assign btb_target_o = target_q[rd_idx];
-assign btb_safe_o   = safe_q[rd_idx];
+assign btb_hit_o       = valid_q[rd_idx] & (tag_q[rd_idx] == rd_tag);
+assign btb_target_o    = target_q[rd_idx];
+assign btb_safe_o      = safe_q[rd_idx];
+assign btb_is_cond_o   = is_cond_q[rd_idx];
+assign btb_bht_index_o = bht_index_q[rd_idx];
 
 endmodule : scr1_pipe_btb
 

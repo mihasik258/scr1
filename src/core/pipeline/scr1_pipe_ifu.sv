@@ -90,7 +90,8 @@ module scr1_pipe_ifu
     input   logic                                   exu2ifu_bp_btb_upd_vd_i,      // train pulse
     input   logic [`SCR1_XLEN-1:0]                  exu2ifu_bp_btb_upd_pc_i,      // branch/jump PC
     input   logic [`SCR1_XLEN-1:0]                  exu2ifu_bp_btb_upd_target_i,  // resolved taken target
-    input   logic                                   exu2ifu_bp_btb_upd_safe_i     // branch ends on word boundary
+    input   logic                                   exu2ifu_bp_btb_upd_safe_i,    // branch ends on word boundary
+    input   logic                                   exu2ifu_bp_btb_upd_is_cond_i  // resolved transfer is a conditional branch
 `endif // SCR1_BP_BTB
 );
 
@@ -891,6 +892,15 @@ scr1_pipe_bht #(
     .bht_rindex_i    (ifu_head_pc[SCR1_BP_BHT_IDX_W:1]),
     .bht_valid_o     (bht_valid                       ),
     .bht_taken_o     (bht_taken                       ),
+`ifdef SCR1_BP_BTB
+    .bht_rindex2_i   (btb_bht_index_fetch             ),  // fetch-side gate: BTB-stored branch index
+    .bht_valid2_o    (btb_bht_valid_fetch             ),
+    .bht_taken2_o    (btb_bht_taken_fetch             ),
+`else // SCR1_BP_BTB
+    .bht_rindex2_i   ('0                              ),
+    .bht_valid2_o    (                                ),
+    .bht_taken2_o    (                                ),
+`endif // SCR1_BP_BTB
     .bht_upd_vd_i    (exu2ifu_bp_upd_vd_i             ),
     .bht_upd_index_i (exu2ifu_bp_upd_index_i          ),
     .bht_upd_taken_i (exu2ifu_bp_upd_taken_i          )
@@ -909,6 +919,10 @@ scr1_pipe_bht #(
 logic                              btb_hit_fetch;      // BTB hit for the word being fetched
 logic [`SCR1_XLEN-1:0]             btb_target_fetch;   // its cached taken target
 logic                              btb_safe_fetch;     // cached branch ends on word boundary
+logic                              btb_is_cond_fetch;  // cached entry is a conditional branch
+logic [SCR1_BP_BHT_IDX_W-1:0]      btb_bht_index_fetch; // cached branch's BHT index
+logic                              btb_bht_valid_fetch; // fetch-side BHT read (at the cached index)
+logic                              btb_bht_taken_fetch;
 
 scr1_pipe_btb #(
     .SCR1_BTB_SIZE  (SCR1_BP_BTB_SIZE ),
@@ -920,10 +934,13 @@ scr1_pipe_btb #(
     .btb_hit_o        (btb_hit_fetch               ),
     .btb_target_o     (btb_target_fetch            ),
     .btb_safe_o       (btb_safe_fetch              ),
+    .btb_is_cond_o    (btb_is_cond_fetch           ),
+    .btb_bht_index_o  (btb_bht_index_fetch         ),
     .btb_upd_vd_i     (exu2ifu_bp_btb_upd_vd_i     ),
     .btb_upd_pc_i     (exu2ifu_bp_btb_upd_pc_i     ),
     .btb_upd_target_i (exu2ifu_bp_btb_upd_target_i ),
-    .btb_upd_safe_i   (exu2ifu_bp_btb_upd_safe_i   )
+    .btb_upd_safe_i   (exu2ifu_bp_btb_upd_safe_i   ),
+    .btb_upd_is_cond_i(exu2ifu_bp_btb_upd_is_cond_i)
 );
 
 // --- B2 early-BTB fetch steer -------------------------------------------------
@@ -932,12 +949,15 @@ scr1_pipe_btb #(
 // NEXT fetch address (no queue flush): the branch's own word is still fetched
 // and enqueued, then the target is fetched right behind it.
 logic                              btb_steer_req;      // steer the next fetch this cycle
-// Steer ONLY safe (word-boundary-ending) branches. The target may now be
-// unaligned (target[1]==1): the target word's low half is skipped by driving
-// new_pc_unaligned for the target word (carried through the steer FIFO, applied
-// on the branch word's response - see below). Unsafe (RVC-low) branches still
-// fall back to the D1 late redirect.
-assign btb_steer_req = btb_hit_fetch & btb_safe_fetch
+// Steer ONLY safe (word-boundary-ending) branches, and gate the direction at
+// fetch by the BHT (book model: taken = BTB.valid & counter). Unconditional
+// jumps always steer; a conditional branch steers only when its BHT counter is
+// trained-and-taken - so we no longer blindly steer branches that turn out
+// not-taken (which used to cost a misfetch flush). The BHT is read at the
+// branch's own index, stored in the BTB entry (pc[1] is unknown at fetch).
+logic btb_dir_ok;
+assign btb_dir_ok = ~btb_is_cond_fetch | (btb_bht_valid_fetch & btb_bht_taken_fetch);
+assign btb_steer_req = btb_hit_fetch & btb_safe_fetch & btb_dir_ok
                      & imem_handshake_done & ifu_fsm_fetch
                      & ~pc_new_req_i2;                 // an architectural redirect wins
 

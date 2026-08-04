@@ -181,7 +181,8 @@ module scr1_pipe_exu (
     output  logic                               exu2ifu_bp_btb_upd_vd_o,
     output  logic [`SCR1_XLEN-1:0]              exu2ifu_bp_btb_upd_pc_o,
     output  logic [`SCR1_XLEN-1:0]              exu2ifu_bp_btb_upd_target_o,
-    output  logic                               exu2ifu_bp_btb_upd_safe_o
+    output  logic                               exu2ifu_bp_btb_upd_safe_o,
+    output  logic                               exu2ifu_bp_btb_upd_is_cond_o
 `endif // SCR1_BP_BTB
 );
 
@@ -894,6 +895,9 @@ assign exu2ifu_bp_btb_upd_target_o = jb_new_pc;
 // safe = branch ends on a fetch-word boundary (RVI-aligned or RVC in high half):
 // only such branches may steer the fetch (their target is the very next word).
 assign exu2ifu_bp_btb_upd_safe_o   = ~(pc_curr_ff[1] ^ exu_queue.instr_rvc);
+// is_cond lets the fetch-side gate steer jumps unconditionally but require a
+// taken BHT for conditional branches (book model: taken = BTB.valid & counter).
+assign exu2ifu_bp_btb_upd_is_cond_o = exu_queue.branch_req;
 `endif // SCR1_BP_BTB
 
 // PC to be loaded on MRET from interrupt trap

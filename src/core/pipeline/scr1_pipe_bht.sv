@@ -29,10 +29,15 @@ module scr1_pipe_bht #(
     input   logic                       clk,
     input   logic                       rst_n,
 
-    // Read port (combinational), indexed at fetch by the shadow PC
+    // Read port (combinational), indexed at the queue output by the shadow PC
     input   logic [SCR1_BHT_IDX_W-1:0]  bht_rindex_i,           // read index
     output  logic                       bht_valid_o,            // entry has been trained
     output  logic                       bht_taken_o,            // predicted direction (counter MSB)
+
+    // Second read port (combinational), for the early fetch-side steer gate
+    input   logic [SCR1_BHT_IDX_W-1:0]  bht_rindex2_i,          // read index (BTB-stored branch index)
+    output  logic                       bht_valid2_o,           // entry has been trained
+    output  logic                       bht_taken2_o,           // predicted direction
 
     // Update port, driven by the execution stage on a resolved branch
     input   logic                       bht_upd_vd_i,           // update this cycle
@@ -52,6 +57,10 @@ logic [1:0]                      sat_cur;
 // Read (untrained entries report valid=0 -> caller uses BTFN fallback)
 assign bht_valid_o = valid_q[bht_rindex_i];
 assign bht_taken_o = sat_q[bht_rindex_i][1];
+
+// Second (fetch-side) read port
+assign bht_valid2_o = valid_q[bht_rindex2_i];
+assign bht_taken2_o = sat_q[bht_rindex2_i][1];
 
 assign sat_cur = sat_q[bht_upd_index_i];
 

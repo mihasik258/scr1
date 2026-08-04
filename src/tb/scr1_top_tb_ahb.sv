@@ -416,6 +416,10 @@ longint unsigned bpp_taken_total = 0; // all taken jumps/branches retired
 longint unsigned bpp_taken_safe  = 0; // ends on a word boundary -> steerable
 longint unsigned bpp_taken_rvclo = 0; // RVC in the low half   -> the predecode wall
 longint unsigned bpp_taken_rviun = 0; // RVI on an odd halfword (word-straddling) -> also unsafe
+// Cost of decoupling BHT from the steer: a steered branch the BHT then calls
+// not-taken -> misfetch flush to the sequential path (a bubble the book's
+// fetch-time counter gating would avoid).
+longint unsigned bpp_steer_misfetch = 0;
 
 always_ff @(posedge clk) begin
     if (rst_n) begin
@@ -445,6 +449,9 @@ always_ff @(posedge clk) begin
         // B2: count committed BTB-steered branches (early redirect, no flush)
         if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_steer_commit)
             bpp_btb_correct <= bpp_btb_correct + 1;
+        // ... and steered branches the BHT then calls not-taken (misfetch flush)
+        if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_steer_misfetch)
+            bpp_steer_misfetch <= bpp_steer_misfetch + 1;
 `endif // SCR1_BP_BTB
         // --- redirect events + shadow windows (Phase-0.b) ---
 `ifdef SCR1_BPRED_EN
@@ -482,7 +489,7 @@ final begin
     $display("BP_PROFILE2 bp_redir=%0d exu_redir=%0d bub_bp=%0d bub_exu=%0d bub_other=%0d",
              bpp_bp_redir, bpp_exu_redir, bpp_bub_bp, bpp_bub_exu, bpp_bub_other);
 `ifdef SCR1_BP_BTB
-    $display("BP_PROFILE3 btb_steered_branches=%0d", bpp_btb_correct);
+    $display("BP_PROFILE3 btb_steer_commit=%0d steer_misfetch=%0d", bpp_btb_correct, bpp_steer_misfetch);
 `endif // SCR1_BP_BTB
     $display("BP_PROFILE4 taken_total=%0d safe=%0d rvc_low=%0d rvi_unaligned=%0d",
              bpp_taken_total, bpp_taken_safe, bpp_taken_rvclo, bpp_taken_rviun);
