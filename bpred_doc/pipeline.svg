@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 640" font-family="'Segoe UI', Calibri, system-ui, sans-serif" role="img" aria-labelledby="ttl dsc">
+  <title id="ttl">SCR1 3-stage pipeline with the added branch predictor</title>
+  <desc id="dsc">SCR1 pipeline IFU to IDU to EXU with instruction memory and four added predictor blocks (BTB, BHT, BTFN, RAS) at two prediction points, trained from EXU.</desc>
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#243740"/></marker>
+    <marker id="aa" markerWidth="10" markerHeight="10" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#b9791b"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1120" height="640" fill="#ffffff"/>
+  <text x="34" y="40" font-size="22" font-weight="700" fill="#243740">SCR1 - 3-ступенчатый конвейер с предсказателем переходов</text>
+  <text x="35" y="62" font-size="13" fill="#5a6b73">CFG=RV32IMC_MAX · синим - штатное ядро SCR1 · янтарным - добавленный предсказатель</text>
+  <rect x="856" y="26" width="16" height="16" rx="3" fill="#cfe8f6" stroke="#243740"/>
+  <text x="878" y="39" font-size="12.5" fill="#243740">ядро SCR1</text>
+  <rect x="960" y="26" width="16" height="16" rx="3" fill="#ffe1b0" stroke="#b9791b"/>
+  <text x="982" y="39" font-size="12.5" fill="#243740">предсказатель</text>
+
+  <!-- memory -->
+  <rect x="34" y="120" width="120" height="150" rx="8" fill="#b0e3e6" stroke="#243740" stroke-width="1.5"/>
+  <text x="94" y="188" text-anchor="middle" font-size="16" font-weight="700" fill="#243740">IMEM</text>
+  <text x="94" y="209" text-anchor="middle" font-size="15" font-weight="700" fill="#243740">/ TCM</text>
+  <text x="94" y="243" text-anchor="middle" font-size="11.5" fill="#40525b">память команд</text>
+
+  <!-- IFU -->
+  <rect x="196" y="112" width="356" height="166" rx="10" fill="#eef7fc" stroke="#243740" stroke-width="1.6"/>
+  <text x="210" y="133" font-size="15" font-weight="700" fill="#243740">IFU - выборка</text>
+  <rect x="212" y="150" width="100" height="108" rx="6" fill="#cfe8f6" stroke="#243740" stroke-width="1.3"/>
+  <text x="262" y="196" text-anchor="middle" font-size="14" font-weight="700" fill="#243740">Fetch</text>
+  <text x="262" y="216" text-anchor="middle" font-size="11" fill="#40525b">imem_addr_ff</text>
+  <rect x="322" y="150" width="100" height="108" rx="6" fill="#cfe8f6" stroke="#243740" stroke-width="1.3"/>
+  <text x="372" y="199" text-anchor="middle" font-size="13.5" font-weight="700" fill="#243740">Очередь</text>
+  <text x="372" y="217" text-anchor="middle" font-size="11" fill="#40525b">инструкций</text>
+  <rect x="432" y="150" width="104" height="108" rx="6" fill="#cfe8f6" stroke="#243740" stroke-width="1.3"/>
+  <text x="484" y="196" text-anchor="middle" font-size="13.5" font-weight="700" fill="#243740">Голова</text>
+  <text x="484" y="216" text-anchor="middle" font-size="11" fill="#40525b">ifu_head_pc</text>
+  <line x1="312" y1="204" x2="320" y2="204" stroke="#243740" stroke-width="1.5" marker-end="url(#a)"/>
+  <line x1="422" y1="204" x2="430" y2="204" stroke="#243740" stroke-width="1.5" marker-end="url(#a)"/>
+
+  <!-- IDU -->
+  <rect x="592" y="120" width="112" height="150" rx="8" fill="#b1ddf0" stroke="#243740" stroke-width="1.5"/>
+  <text x="648" y="190" text-anchor="middle" font-size="16" font-weight="700" fill="#243740">IDU</text>
+  <text x="648" y="210" text-anchor="middle" font-size="11.5" fill="#40525b">декод</text>
+
+  <!-- EXU -->
+  <rect x="744" y="112" width="342" height="166" rx="10" fill="#eef7fc" stroke="#243740" stroke-width="1.6"/>
+  <text x="758" y="133" font-size="15" font-weight="700" fill="#243740">EXU</text>
+  <rect x="760" y="146" width="150" height="52" rx="6" fill="#b1ddf0" stroke="#243740" stroke-width="1.2"/>
+  <text x="835" y="177" text-anchor="middle" font-size="13" font-weight="700" fill="#243740">IALU</text>
+  <rect x="922" y="146" width="150" height="52" rx="6" fill="#b1ddf0" stroke="#243740" stroke-width="1.2"/>
+  <text x="997" y="177" text-anchor="middle" font-size="13" font-weight="700" fill="#243740">MPRF</text>
+  <rect x="760" y="206" width="150" height="52" rx="6" fill="#b1ddf0" stroke="#243740" stroke-width="1.2"/>
+  <text x="835" y="237" text-anchor="middle" font-size="13" font-weight="700" fill="#243740">CSR</text>
+  <rect x="922" y="206" width="150" height="52" rx="6" fill="#b1ddf0" stroke="#243740" stroke-width="1.2"/>
+  <text x="997" y="237" text-anchor="middle" font-size="13" font-weight="700" fill="#243740">LSU</text>
+
+  <!-- spine arrows -->
+  <line x1="154" y1="195" x2="210" y2="195" stroke="#243740" stroke-width="1.7" marker-end="url(#a)"/>
+  <line x1="552" y1="195" x2="590" y2="195" stroke="#243740" stroke-width="1.7" marker-end="url(#a)"/>
+  <line x1="704" y1="195" x2="742" y2="195" stroke="#243740" stroke-width="1.7" marker-end="url(#a)"/>
+
+  <!-- predictor band -->
+  <rect x="196" y="392" width="890" height="110" rx="12" fill="#fff7ea" stroke="#e6c079" stroke-width="1.3" stroke-dasharray="5 4"/>
+  <text x="210" y="412" font-size="13.5" font-weight="700" fill="#b9791b">Предсказатель переходов (добавлено) - без спекулятивного состояния</text>
+  <rect x="212" y="424" width="150" height="66" rx="7" fill="#ffe1b0" stroke="#b9791b" stroke-width="1.5"/>
+  <text x="287" y="449" text-anchor="middle" font-size="14.5" font-weight="700" fill="#7a4d10">BTB</text>
+  <text x="287" y="466" text-anchor="middle" font-size="10.8" fill="#7a4d10">ранний кэш целей</text>
+  <text x="287" y="481" text-anchor="middle" font-size="10" fill="#9a7030" font-family="monospace">scr1_pipe_btb.sv</text>
+  <rect x="384" y="424" width="150" height="66" rx="7" fill="#ffe1b0" stroke="#b9791b" stroke-width="1.5"/>
+  <text x="459" y="449" text-anchor="middle" font-size="14.5" font-weight="700" fill="#7a4d10">BHT</text>
+  <text x="459" y="466" text-anchor="middle" font-size="10.8" fill="#7a4d10">направление (2-бит)</text>
+  <text x="459" y="481" text-anchor="middle" font-size="10" fill="#9a7030" font-family="monospace">scr1_pipe_bht.sv</text>
+  <rect x="556" y="424" width="150" height="66" rx="7" fill="#ffe1b0" stroke="#b9791b" stroke-width="1.5"/>
+  <text x="631" y="449" text-anchor="middle" font-size="14.5" font-weight="700" fill="#7a4d10">BTFN</text>
+  <text x="631" y="466" text-anchor="middle" font-size="10.8" fill="#7a4d10">статика + цель</text>
+  <text x="631" y="481" text-anchor="middle" font-size="10" fill="#9a7030" font-family="monospace">scr1_pipe_bpred.sv</text>
+  <rect x="728" y="424" width="150" height="66" rx="7" fill="#ffe1b0" stroke="#b9791b" stroke-width="1.5"/>
+  <text x="803" y="449" text-anchor="middle" font-size="14.5" font-weight="700" fill="#7a4d10">RAS</text>
+  <text x="803" y="466" text-anchor="middle" font-size="10.8" fill="#7a4d10">стек возвратов</text>
+  <text x="803" y="481" text-anchor="middle" font-size="10" fill="#9a7030" font-family="monospace">scr1_pipe_ras.sv</text>
+
+  <!-- (1) early: fetch <-> BTB -->
+  <line x1="250" y1="258" x2="250" y2="422" stroke="#b9791b" stroke-width="1.6" marker-end="url(#aa)"/>
+  <line x1="274" y1="424" x2="274" y2="260" stroke="#b9791b" stroke-width="1.6" marker-end="url(#aa)"/>
+  <text x="262" y="332" text-anchor="middle" font-size="11.5" fill="#b9791b" font-weight="700">① рано</text>
+  <text x="262" y="347" text-anchor="middle" font-size="9.8" fill="#8a5f22">чтение @ адрес выборки</text>
+  <text x="262" y="359" text-anchor="middle" font-size="9.8" fill="#8a5f22">- steer (без флаша)</text>
+  <line x1="384" y1="450" x2="364" y2="450" stroke="#b9791b" stroke-width="1.4" marker-end="url(#aa)"/>
+  <text x="373" y="443" text-anchor="middle" font-size="9" fill="#8a5f22">гейт</text>
+
+  <!-- (2) late: HEAD -> BHT/BTFN/RAS (read bus) -->
+  <path d="M484,258 L484,352" fill="none" stroke="#b9791b" stroke-width="1.6"/>
+  <path d="M459,352 L803,352" fill="none" stroke="#b9791b" stroke-width="1.6"/>
+  <line x1="459" y1="352" x2="459" y2="422" stroke="#b9791b" stroke-width="1.6" marker-end="url(#aa)"/>
+  <line x1="631" y1="352" x2="631" y2="422" stroke="#b9791b" stroke-width="1.6" marker-end="url(#aa)"/>
+  <line x1="803" y1="352" x2="803" y2="422" stroke="#b9791b" stroke-width="1.6" marker-end="url(#aa)"/>
+  <text x="628" y="343" text-anchor="middle" font-size="11.5" fill="#b9791b" font-weight="700">② поздно - чтение по ifu_head_pc</text>
+
+  <!-- late redirect back to fetch (clean left route) -->
+  <path d="M384,450 L172,450 L172,232 L210,232" fill="none" stroke="#b9791b" stroke-width="1.7" marker-end="url(#aa)"/>
+  <text x="150" y="345" text-anchor="middle" font-size="10.5" fill="#b9791b" font-weight="600" transform="rotate(-90 150 345)">редирект в Fetch (флаш)</text>
+
+  <!-- training from EXU -->
+  <path d="M915,278 L915,560 L287,560 L287,490" fill="none" stroke="#b9791b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aa)"/>
+  <path d="M459,560 L459,490" fill="none" stroke="#b9791b" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#aa)"/>
+  <text x="640" y="577" text-anchor="middle" font-size="11.5" fill="#b9791b" font-weight="600">обучение из EXU на retire</text>
+
+  <!-- EXU redirect wins -->
+  <path d="M915,112 L915,84 L262,84 L262,148" fill="none" stroke="#243740" stroke-width="1.8" marker-end="url(#a)"/>
+  <text x="600" y="76" text-anchor="middle" font-size="12" fill="#243740" font-weight="700">редирект EXU</text>
+</svg>

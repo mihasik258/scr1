@@ -1,4 +1,3 @@
-/// SCR1 static branch predictor (BTFN)
 /// @file       <scr1_pipe_bpred.sv>
 /// @brief      Static branch predictor (backward-taken / forward-not-taken)
 ///
@@ -6,19 +5,9 @@
 ///   Copyright lowRISC contributors. Licensed under the Apache License, Version 2.0.
 ///   SPDX-License-Identifier: Apache-2.0
 ///
-/// Changes vs. the original Ibex module:
-///  - removed `ibex_pkg` import: opcodes are given as RISC-V literals;
-///  - removed `prim_assert.sv`: the one-hot check is a plain SVA under
-///    SCR1_TRGT_SIMULATION;
-///  - added phase parameters so the predictor scope matches the integration
-///    milestones (M1: only JAL; M2: + conditional RVI branches; M3: + RVC);
-///  - SCR1 port/signal naming.
-///
-/// Functionality (unchanged from Ibex): takes an instruction and its PC,
-/// detects a branch/jump and computes the target. Jumps are always predicted
-/// taken; conditional branches are predicted taken when the PC offset is
-/// negative (backward). The block is purely combinational; clk/rst_n are used
-/// only by the assertion.
+// Functionality:
+// - Detects a branch/jump and computes the PC+imm target
+// - Jumps always taken; conditional branches taken when the offset is negative
 
 `include "scr1_arch_description.svh"
 
@@ -37,17 +26,16 @@ module scr1_pipe_bpred #(
     // Static prediction for the supplied instruction
     output  logic                       bp_predict_taken_o,     // predicted taken
     output  logic [`SCR1_XLEN-1:0]      bp_predict_pc_o,        // predicted target PC
-    output  logic                       bp_is_branch_o          // instr is a branch/jump (used by B2 early-BTB steer)
+    output  logic                       bp_is_branch_o          // instr is a branch/jump
 `ifdef SCR1_BP_DYNAMIC
     ,
-    // Dynamic direction from the BHT (D1). When the entry is untrained
-    // (bp_bht_valid_i == 0) the module falls back to the static BTFN rule.
+    // Dynamic direction from the BHT (fallback to BTFN when untrained)
     input   logic                       bp_bht_valid_i,         // BHT entry trained
     input   logic                       bp_bht_taken_i          // BHT predicted direction
 `endif // SCR1_BP_DYNAMIC
 );
 
-// RISC-V opcodes (were ibex_pkg enums in the original)
+// RISC-V opcodes
 localparam logic [6:0] SCR1_OPCODE_BRANCH = 7'b1100011;
 localparam logic [6:0] SCR1_OPCODE_JAL    = 7'b1101111;
 
@@ -70,7 +58,7 @@ logic                   instr_b_taken;
 // Short internal name (as in Ibex)
 assign instr = bp_instr_i;
 
-// Immediate extraction (verbatim from Ibex) ----------------------------------
+// Immediate extraction --------------------------------------------------------
 
 // Uncompressed immediates
 assign imm_j_type = { {12{instr[31]}}, instr[19:12], instr[20], instr[30:21], 1'b0 };
@@ -88,13 +76,13 @@ assign imm_cb_type = { {23{instr[12]}}, instr[12], instr[6:5], instr[2], instr[1
 assign instr_b = (instr[6:0] == SCR1_OPCODE_BRANCH) & SCR1_BP_PREDICT_BRANCHES;
 assign instr_j = (instr[6:0] == SCR1_OPCODE_JAL);
 
-// Compressed branch/jump (gated off unless RVC phase is enabled)
+// Compressed branch/jump
 assign instr_cb = SCR1_BP_PREDICT_RVC
                 & (instr[1:0] == 2'b01) & ((instr[15:13] == 3'b110) | (instr[15:13] == 3'b111));
 assign instr_cj = SCR1_BP_PREDICT_RVC
                 & (instr[1:0] == 2'b01) & ((instr[15:13] == 3'b101) | (instr[15:13] == 3'b001));
 
-// Select the branch offset for target calculation (verbatim from Ibex)
+// Select the branch offset for target calculation
 always_comb begin
     branch_imm = imm_b_type;
     unique case (1'b1)
@@ -107,9 +95,7 @@ always_comb begin
 end
 
 `ifdef SCR1_BP_DYNAMIC
-// Dynamic direction for conditional branches: use the BHT counter when the
-// entry has been trained, otherwise fall back to the static BTFN rule (taken
-// iff the branch offset is negative). Jumps stay always-taken (below).
+// Conditional direction: BHT counter when trained, else static BTFN (offset sign)
 logic                   cond_btfn;
 logic                   cond_taken;
 assign cond_btfn  = instr_b ? imm_b_type[31] : imm_cb_type[31];
@@ -123,8 +109,7 @@ assign instr_b_taken = (instr_b & imm_b_type[31]) | (instr_cb & imm_cb_type[31])
 // Jumps always taken, otherwise use instr_b_taken
 assign bp_predict_taken_o = bp_vd_i & (instr_j | instr_cj | instr_b_taken);
 assign bp_predict_pc_o    = bp_pc_i + branch_imm;
-// Head instruction is a (direct) branch or jump - lets the IFU identify a
-// BTB-steered branch at the queue output even when BTFN predicts not-taken.
+// Instruction is a (direct) branch or jump
 assign bp_is_branch_o     = bp_vd_i & (instr_j | instr_b | instr_cj | instr_cb);
 
 `ifdef SCR1_TRGT_SIMULATION

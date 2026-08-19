@@ -70,16 +70,16 @@ module scr1_pipe_ifu
     output  logic                                   ifu2idu_vd_o                // IFU request
 `ifdef SCR1_BP_RAS_EN
     ,
-    // IFU -> EXU RAS prediction (return target), aligned with the instruction
+    // IFU -> EXU RAS prediction
     output  logic                                   ifu2exu_bp_ras_vd_o,        // this instr is a predicted return
     output  logic [`SCR1_XLEN-1:0]                  ifu2exu_bp_ras_target_o     // predicted return target (RAS top)
 `endif // SCR1_BP_RAS_EN
 `ifdef SCR1_BP_DYNAMIC
     ,
-    // IFU -> EXU: dynamic-predictor metadata carried with the instruction (D0)
+    // IFU -> EXU: dynamic-predictor metadata carried with the instruction
     output  logic                                   ifu2exu_bp_predicted_taken_o, // direction predicted for this instr
-    output  logic [SCR1_BP_BHT_IDX_W-1:0]           ifu2exu_bp_index_o,           // BHT index used at fetch (for training)
-    // EXU -> IFU: BHT training channel (D0: connected but not yet consumed here)
+    output  logic [SCR1_BP_BHT_IDX_W-1:0]           ifu2exu_bp_index_o,           // BHT index used at fetch
+    // EXU -> IFU: BHT training channel
     input   logic                                   exu2ifu_bp_upd_vd_i,          // a conditional branch resolved
     input   logic [SCR1_BP_BHT_IDX_W-1:0]           exu2ifu_bp_upd_index_i,       // BHT index to update
     input   logic                                   exu2ifu_bp_upd_taken_i        // actual taken outcome
@@ -91,7 +91,8 @@ module scr1_pipe_ifu
     input   logic [`SCR1_XLEN-1:0]                  exu2ifu_bp_btb_upd_pc_i,      // branch/jump PC
     input   logic [`SCR1_XLEN-1:0]                  exu2ifu_bp_btb_upd_target_i,  // resolved taken target
     input   logic                                   exu2ifu_bp_btb_upd_safe_i,    // branch ends on word boundary
-    input   logic                                   exu2ifu_bp_btb_upd_is_cond_i  // resolved transfer is a conditional branch
+    input   logic                                   exu2ifu_bp_btb_upd_is_cond_i, // resolved transfer is a conditional branch
+    input   logic                                   exu2ifu_bp_btb_upd_rvclo_i    // branch is an RVC in the low half
 `endif // SCR1_BP_BTB
 );
 
@@ -108,8 +109,7 @@ localparam SCR1_IFU_QUEUE_PTR_W     = SCR1_IFU_QUEUE_ADR_W + 1;
 localparam SCR1_IFU_Q_FREE_H_W      = $clog2(SCR1_IFU_Q_SIZE_HALF + 1);
 localparam SCR1_IFU_Q_FREE_W_W      = $clog2(SCR1_IFU_Q_SIZE_WORD + 1);
 
-// Transaction-counter width must cover the free-word count so q_has_free_slots
-// never truncates (a fixed 3 hangs the IFU at depths >= 8). Keep >= 3.
+// Transaction-counter width (must cover the free-word count)
 localparam SCR1_TXN_CNT_W           = (SCR1_IFU_Q_FREE_W_W > 3) ? SCR1_IFU_Q_FREE_W_W : 3;
 
 //------------------------------------------------------------------------------
@@ -282,10 +282,12 @@ logic [`SCR1_XLEN-1:0]              bp_any_target;      // predicted target (PC+
 logic                               bp_is_branch;       // instr at queue output is a branch/jump (B2)
 `ifdef SCR1_BP_BTB
 logic                               q_steered [SCR1_IFU_Q_SIZE_HALF]; // per-halfword: word was BTB-steered
-// steer-flag FIFO carrying the fetch-time steer decision to the response/enqueue
+logic                               q_steered_rvclo [SCR1_IFU_Q_SIZE_HALF]; // ... and the steer was for a rvc_low branch
+// steer-flag FIFO (fetch-time steer decision, request -> response)
 localparam int unsigned SCR1_STEER_FIFO_DEPTH = 8;
 logic                               steer_fifo [SCR1_STEER_FIFO_DEPTH];
 logic                               steer_fifo_unal [SCR1_STEER_FIFO_DEPTH]; // target[1] of the steer
+logic                               steer_fifo_rvclo [SCR1_STEER_FIFO_DEPTH]; // steer was for a rvc_low branch
 logic [2:0]                         steer_fifo_wptr;
 logic [2:0]                         steer_fifo_rptr;
 `endif // SCR1_BP_BTB
@@ -337,10 +339,7 @@ end
 assign new_pc_unaligned_next = pc_new_req_i2 ? pc_new_i2[1]
                              : ~imem_resp_vd  ? new_pc_unaligned_ff
 `ifdef SCR1_BP_BTB
-                             // A steered branch word: the NEXT response is its
-                             // target word, whose low half must be skipped when
-                             // the target is unaligned. The branch word itself
-                             // already enqueued with the current (correct) flag.
+                             // Steered branch word: skip the target's low half when unaligned
                              : steer_resp      ? steer_unal_resp
 `endif // SCR1_BP_BTB
                                               : 1'b0;
@@ -478,8 +477,15 @@ always_ff @(posedge clk, negedge rst_n) begin
     end
 end
 
+// rvc_low steer-commit skips the co-resident upper half: advance by a full word
+logic q_rd_squash;
+`ifdef SCR1_BP_BTB
+assign q_rd_squash = bp_rvclo_squash;
+`else // SCR1_BP_BTB
+assign q_rd_squash = 1'b0;
+`endif // SCR1_BP_BTB
 assign q_rptr_next = q_flush_req ? '0
-                   : ~q_rd_none  ? q_rptr + (q_rd_hword ? SCR1_IFU_QUEUE_PTR_W'('b001) : SCR1_IFU_QUEUE_PTR_W'('b010))
+                   : ~q_rd_none  ? q_rptr + ((q_rd_hword & ~q_rd_squash) ? SCR1_IFU_QUEUE_PTR_W'('b001) : SCR1_IFU_QUEUE_PTR_W'('b010))
                                  : q_rptr;
 
 // Queue data and error flag registers
@@ -496,6 +502,7 @@ always_ff @(posedge clk, negedge rst_n) begin
         q_err   <= '{SCR1_IFU_Q_SIZE_HALF{1'b0}};
 `ifdef SCR1_BP_BTB
         q_steered <= '{SCR1_IFU_Q_SIZE_HALF{1'b0}};
+        q_steered_rvclo <= '{SCR1_IFU_Q_SIZE_HALF{1'b0}};
 `endif // SCR1_BP_BTB
     end else if (q_wr_en) begin
         case (q_wr_size)
@@ -504,6 +511,7 @@ always_ff @(posedge clk, negedge rst_n) begin
                 q_err [SCR1_IFU_QUEUE_ADR_W'(q_wptr)]         <= imem_resp_er;
 `ifdef SCR1_BP_BTB
                 q_steered[SCR1_IFU_QUEUE_ADR_W'(q_wptr)]      <= steer_resp;
+                q_steered_rvclo[SCR1_IFU_QUEUE_ADR_W'(q_wptr)] <= steer_rvclo_resp;
 `endif // SCR1_BP_BTB
             end
             SCR1_IFU_QUEUE_WR_FULL  : begin
@@ -514,6 +522,8 @@ always_ff @(posedge clk, negedge rst_n) begin
 `ifdef SCR1_BP_BTB
                 q_steered[SCR1_IFU_QUEUE_ADR_W'(q_wptr)]      <= steer_resp;
                 q_steered[SCR1_IFU_QUEUE_ADR_W'(q_wptr + 1'b1)] <= steer_resp;
+                q_steered_rvclo[SCR1_IFU_QUEUE_ADR_W'(q_wptr)]      <= steer_rvclo_resp;
+                q_steered_rvclo[SCR1_IFU_QUEUE_ADR_W'(q_wptr + 1'b1)] <= steer_rvclo_resp;
 `endif // SCR1_BP_BTB
             end
         endcase
@@ -844,15 +854,10 @@ assign ifu2hdu_pbuf_rdy_o = idu2ifu_rdy_i;
 `endif // SCR1_DBG_EN
 
 //------------------------------------------------------------------------------
-// Static branch predictor (BTFN) - milestone M1: JAL only
+// Static branch predictor (BTFN)
 //------------------------------------------------------------------------------
-//
- // Shadow fetch PC (ifu_head_pc) holds the PC of the instruction currently at
- // the queue output (ifu2idu_instr_o). It advances one instruction at a time
- // (decode rate) and is reset on any redirect. Invariant to keep: at the moment
- // an instruction is consumed, ifu_head_pc must equal pc_curr_ff in the EXU for
- // the same instruction (checked by assertion below).
-//
+// Shadow fetch PC: PC of the instruction at the queue output; advances one
+// instruction at a time and resets on any redirect.
 
 assign bp_instr_consumed = ifu2idu_vd_o & idu2ifu_rdy_i;
 assign ifu_head_pc_upd   = exu2ifu_pc_new_req_i | bp_redirect_req | bp_instr_consumed;
@@ -875,13 +880,27 @@ end
 
 `ifdef SCR1_BP_DYNAMIC
 //------------------------------------------------------------------------------
-// Branch History Table (D1): dynamic direction for conditional branches
+// Branch History Table
 //------------------------------------------------------------------------------
-// Read by the shadow PC (same index carried to EXU for training); trained from
-// the EXU->IFU channel on every resolved conditional branch. Feeds the
-// direction decision inside scr1_pipe_bpred (BTFN fallback when untrained).
+// Read by the shadow PC; trained from the EXU->IFU channel
 logic                              bht_valid;
 logic                              bht_taken;
+
+// gshare global history: index the BHT by (PC XOR GHR)
+logic [SCR1_BP_BHT_IDX_W-1:0]      gshare_hash;
+`ifdef SCR1_BP_GSHARE
+logic [SCR1_BP_GHR_W-1:0]          ghr_ff;
+always_ff @(posedge clk, negedge rst_n) begin
+    if (~rst_n) begin
+        ghr_ff <= '0;
+    end else if (exu2ifu_bp_upd_vd_i) begin
+        ghr_ff <= {ghr_ff[SCR1_BP_GHR_W-2:0], exu2ifu_bp_upd_taken_i};
+    end
+end
+assign gshare_hash = {{(SCR1_BP_BHT_IDX_W-SCR1_BP_GHR_W){1'b0}}, ghr_ff};
+`else // SCR1_BP_GSHARE
+assign gshare_hash = '0;
+`endif // SCR1_BP_GSHARE
 
 scr1_pipe_bht #(
     .SCR1_BHT_SIZE  (SCR1_BP_BHT_SIZE ),
@@ -889,11 +908,11 @@ scr1_pipe_bht #(
 ) i_bht (
     .clk             (clk                             ),
     .rst_n           (rst_n                           ),
-    .bht_rindex_i    (ifu_head_pc[SCR1_BP_BHT_IDX_W:1]),
+    .bht_rindex_i    (ifu_head_pc[SCR1_BP_BHT_IDX_W:1] ^ gshare_hash),
     .bht_valid_o     (bht_valid                       ),
     .bht_taken_o     (bht_taken                       ),
 `ifdef SCR1_BP_BTB
-    .bht_rindex2_i   (btb_bht_index_fetch             ),  // fetch-side gate: BTB-stored branch index
+    .bht_rindex2_i   (btb_bht_index_fetch ^ gshare_hash),  // fetch-side gate: BTB-stored branch index
     .bht_valid2_o    (btb_bht_valid_fetch             ),
     .bht_taken2_o    (btb_bht_taken_fetch             ),
 `else // SCR1_BP_BTB
@@ -909,17 +928,14 @@ scr1_pipe_bht #(
 
 `ifdef SCR1_BP_BTB
 //------------------------------------------------------------------------------
-// Early Branch Target Buffer (B1: measurement only, does not steer fetch)
+// Early Branch Target Buffer
 //------------------------------------------------------------------------------
-// Trained from the EXU on resolved taken direct branches/jumps. In B1 it is read
-// by the queue-head PC (ifu_head_pc) so we can compare, at the moment the late
-// predictor redirects (bp_redirect_req), whether the BTB already holds the
-// correct target early. In B2 the read moves to the fetch address and drives
-// the fetch stream.
+// Trained from the EXU on resolved taken direct branches/jumps; read at the fetch address
 logic                              btb_hit_fetch;      // BTB hit for the word being fetched
 logic [`SCR1_XLEN-1:0]             btb_target_fetch;   // its cached taken target
 logic                              btb_safe_fetch;     // cached branch ends on word boundary
 logic                              btb_is_cond_fetch;  // cached entry is a conditional branch
+logic                              btb_rvclo_fetch;    // cached branch is rvc_low (RVC in low half)
 logic [SCR1_BP_BHT_IDX_W-1:0]      btb_bht_index_fetch; // cached branch's BHT index
 logic                              btb_bht_valid_fetch; // fetch-side BHT read (at the cached index)
 logic                              btb_bht_taken_fetch;
@@ -935,58 +951,69 @@ scr1_pipe_btb #(
     .btb_target_o     (btb_target_fetch            ),
     .btb_safe_o       (btb_safe_fetch              ),
     .btb_is_cond_o    (btb_is_cond_fetch           ),
+    .btb_rvclo_o      (btb_rvclo_fetch             ),
     .btb_bht_index_o  (btb_bht_index_fetch         ),
     .btb_upd_vd_i     (exu2ifu_bp_btb_upd_vd_i     ),
     .btb_upd_pc_i     (exu2ifu_bp_btb_upd_pc_i     ),
     .btb_upd_target_i (exu2ifu_bp_btb_upd_target_i ),
     .btb_upd_safe_i   (exu2ifu_bp_btb_upd_safe_i   ),
-    .btb_upd_is_cond_i(exu2ifu_bp_btb_upd_is_cond_i)
+    .btb_upd_is_cond_i(exu2ifu_bp_btb_upd_is_cond_i),
+    .btb_upd_rvclo_i  (exu2ifu_bp_btb_upd_rvclo_i  )
 );
 
-// --- B2 early-BTB fetch steer -------------------------------------------------
-// A BTB hit on the fetch address means "the word being fetched contains a taken
-// branch; after fetching it, steer to the cached target". We change only the
-// NEXT fetch address (no queue flush): the branch's own word is still fetched
-// and enqueued, then the target is fetched right behind it.
+// Early-BTB fetch steer: on a BTB hit, steer only the NEXT fetch address (no flush)
 logic                              btb_steer_req;      // steer the next fetch this cycle
-// Steer ONLY safe (word-boundary-ending) branches, and gate the direction at
-// fetch by the BHT (book model: taken = BTB.valid & counter). Unconditional
-// jumps always steer; a conditional branch steers only when its BHT counter is
-// trained-and-taken - so we no longer blindly steer branches that turn out
-// not-taken (which used to cost a misfetch flush). The BHT is read at the
-// branch's own index, stored in the BTB entry (pc[1] is unknown at fetch).
+// Steer only safe branches; gate the direction by the BHT (jumps always steer,
+// conditional branches only when the BHT counter is trained-and-taken)
 logic btb_dir_ok;
 assign btb_dir_ok = ~btb_is_cond_fetch | (btb_bht_valid_fetch & btb_bht_taken_fetch);
-assign btb_steer_req = btb_hit_fetch & btb_safe_fetch & btb_dir_ok
+logic btb_steerable;
+`ifdef SCR1_BP_RVCLO
+// Phase-1 safe subset: rvc_low steer only for UNCONDITIONAL jumps (always taken -> no
+// misfetch path) with an ALIGNED target (clean upper-half squash geometry).
+assign btb_steerable = btb_safe_fetch
+                     | (btb_rvclo_fetch & ~btb_is_cond_fetch & ~btb_target_fetch[1]);
+`else
+assign btb_steerable = btb_safe_fetch;
+`endif
+assign btb_steer_req = btb_hit_fetch & btb_steerable & btb_dir_ok
                      & imem_handshake_done & ifu_fsm_fetch
                      & ~pc_new_req_i2;                 // an architectural redirect wins
 
-// The steered word will be written to the queue when its response returns. The
-// steer flag must travel with the in-flight request (request->response are
-// decoupled), so it rides a small FIFO popped on each imem response, and the
-// popped value marks the queue entry (q_steered) it lands in.
+// Steer flag rides a FIFO from request to response, marking q_steered
 logic                              steer_resp;         // steer flag for the response being written
 logic                              steer_unal_resp;    // steer target[1] for the response being written
+logic                              steer_rvclo_resp;   // the steer being written was for a rvc_low branch
 logic                              q_steered_head;     // head instruction belongs to a steered word
-// ends-on-word-boundary: the target is the very next queue entry only when the
-// consumed branch ends at a word boundary (RVI-aligned or RVC in the high half).
+logic                              q_steered_rvclo_head; // ... and the steer was for a rvc_low branch
+// ends-on-word-boundary: consumed branch ends at a word boundary
 logic                              bp_ends_on_word;
-logic                              bp_steer_hit;       // a safe BTB-steered branch is at the queue output
-logic                              bp_steer_commit;    // ... and direction predictor agrees taken -> no flush
-logic                              bp_steer_misfetch;  // ... but direction predictor says not-taken -> flush to seq
+logic                              bp_rvclo_pos;       // head is an RVC branch in the low half (rvc_low)
+logic                              bp_steer_hit;       // a BTB-steered branch is at the queue output
+logic                              bp_steer_commit;    // ... predictor agrees taken -> no flush
+logic                              bp_steer_misfetch;  // ... predictor says not-taken -> flush to seq
+logic                              bp_rvclo_squash;    // rvc_low commit: skip the co-resident upper half
 logic [`SCR1_XLEN-1:0]             bp_seq_pc;          // sequential fall-through PC
 assign bp_ends_on_word    = ~(ifu_head_pc[1] ^ q_head_is_rvc);
-assign bp_steer_hit       = q_steered_head & bp_ends_on_word & bp_is_branch & bp_instr_consumed;
+// rvc_low steer commits only when THIS word was steered for its low-half branch
+// (so the queued target matches the head branch's target); position alone is not
+// enough - a word steered for its upper-half branch also marks the low half.
+`ifdef SCR1_BP_RVCLO
+assign bp_rvclo_pos       = q_steered_rvclo_head & q_head_is_rvc & ~ifu_head_pc[1];
+`else
+assign bp_rvclo_pos       = 1'b0;
+`endif
+assign bp_steer_hit       = ( (q_steered_head & bp_ends_on_word) | bp_rvclo_pos )
+                          & bp_is_branch & bp_instr_consumed;
 assign bp_steer_commit    = bp_steer_hit &  bp_predict_taken;
 assign bp_steer_misfetch  = bp_steer_hit & ~bp_predict_taken;
+assign bp_rvclo_squash    = bp_steer_commit & bp_rvclo_pos;
 assign bp_seq_pc          = ifu_head_pc + (q_head_is_rvc ? `SCR1_XLEN'd2 : `SCR1_XLEN'd4);
 
-// steer-flag FIFO: push on request handshake, pop on response. The AHB response
-// always trails the address handshake by >=1 cycle, so the FIFO is never popped
-// empty. Pushes/pops stay balanced across redirects because discarded responses
-// still pop (they just don't write q_steered, gated by q_wr_en below).
+// steer-flag FIFO: push on request handshake, pop on response
 assign steer_resp      = steer_fifo[steer_fifo_rptr];
 assign steer_unal_resp = steer_fifo_unal[steer_fifo_rptr];
+assign steer_rvclo_resp = steer_fifo_rvclo[steer_fifo_rptr];
 
 always_ff @(posedge clk, negedge rst_n) begin
     if (~rst_n) begin
@@ -996,6 +1023,7 @@ always_ff @(posedge clk, negedge rst_n) begin
         if (imem_handshake_done) begin
             steer_fifo[steer_fifo_wptr]      <= btb_steer_req;
             steer_fifo_unal[steer_fifo_wptr] <= btb_target_fetch[1]; // target alignment for the word AFTER this one
+            steer_fifo_rvclo[steer_fifo_wptr] <= btb_steer_req & btb_rvclo_fetch;
             steer_fifo_wptr                  <= steer_fifo_wptr + 1'b1;
         end
         if (imem_resp_received) begin
@@ -1006,12 +1034,13 @@ end
 
 // Head steer flag, aligned with q_data_head / q_err_head
 assign q_steered_head = q_steered[SCR1_IFU_QUEUE_ADR_W'(q_rptr)];
+assign q_steered_rvclo_head = q_steered_rvclo[SCR1_IFU_QUEUE_ADR_W'(q_rptr)];
 `endif // SCR1_BP_BTB
 
-// Static predictor (adapted from Ibex ibex_branch_predict): direction + PC+imm target.
+// Static predictor: direction + PC+imm target
 scr1_pipe_bpred #(
-    .SCR1_BP_PREDICT_BRANCHES (1'b1),   // M2: predict conditional branches (BTFN)
-    .SCR1_BP_PREDICT_RVC      (1'b1)    // M3: predict compressed jumps/branches
+    .SCR1_BP_PREDICT_BRANCHES (1'b1),   // predict conditional branches
+    .SCR1_BP_PREDICT_RVC      (1'b1)    // predict compressed jumps/branches
 ) i_bpred (
     .clk                (clk               ),
     .rst_n              (rst_n             ),
@@ -1032,8 +1061,7 @@ scr1_pipe_bpred #(
 //------------------------------------------------------------------------------
 // Return Address Stack: call/return detection + return-target prediction
 //------------------------------------------------------------------------------
-// Detect call/return of the instruction at the queue output, per RISC-V ABI
-// (link registers x1/x5). Covers RVI (jal/jalr) and RVC (c.jal/c.jalr/c.jr).
+// Detect call/return per RISC-V ABI (link registers x1/x5); RVI and RVC
 logic [`SCR1_IMEM_DWIDTH-1:0]       ras_instr;
 logic                              ras_rd_link;
 logic                              ras_rs1_link;
@@ -1073,7 +1101,7 @@ scr1_pipe_ras #(
 ) i_ras (
     .clk         (clk                  ),
     .rst_n       (rst_n                ),
-    .ras_flush_i (1'b0                 ),   // never flush: EXU always verifies target -> correctness holds; flush is only a perf heuristic and clearing on every redirect destroys the stack
+    .ras_flush_i (1'b0                 ),   // never flush (EXU verifies the target)
     .ras_push_i  (ras_push             ),
     .ras_pop_i   (ras_pop              ),
     .ras_data_i  (ras_link             ),
@@ -1081,7 +1109,7 @@ scr1_pipe_ras #(
     .ras_data_o  (ras_top              )
 );
 
-// Carry the return prediction to EXU (latched there alongside the instruction)
+// Carry the return prediction to EXU
 assign ifu2exu_bp_ras_vd_o     = ras_predict_vd;
 assign ifu2exu_bp_ras_target_o = ras_top;
 
@@ -1093,25 +1121,21 @@ assign bp_any_taken  = bp_predict_taken;
 assign bp_any_target = bp_predict_pc;
 `endif // SCR1_BP_RAS_EN
 
-// Redirect fetch on a predicted-taken instruction once IDU accepts it.
-// A real EXU redirect always has priority over the prediction.
+// Redirect fetch on a predicted-taken instruction (EXU redirect wins)
 `ifdef SCR1_BP_BTB
-// Flush the fetch when: a non-steered taken branch redirects to its target (D1),
-// OR a steered branch the direction predictor calls not-taken must be pulled
-// back to the sequential path (steer misfetch). A committed steered-taken branch
-// needs no flush - its target is already the next queue entry.
+// Flush on a non-steered taken redirect, or a steer misfetch (committed steer needs none)
 assign bp_redirect_req = bp_instr_consumed & ~exu2ifu_pc_new_req_i
                        & ( (bp_any_taken & ~bp_steer_commit) | bp_steer_misfetch );
 `elsif SCR1_BPRED_EN
 assign bp_redirect_req = bp_any_taken & bp_instr_consumed & ~exu2ifu_pc_new_req_i;
 `else // SCR1_BPRED_EN
-assign bp_redirect_req = 1'b0;   // predictor disabled -> IFU behaves as original
+assign bp_redirect_req = 1'b0;   // predictor disabled
 `endif // SCR1_BP_BTB
 
-// Effective New PC request/value for the IFU datapath. EXU redirect wins.
+// Effective New PC request/value for the IFU datapath (EXU redirect wins)
 assign pc_new_req_i2 = exu2ifu_pc_new_req_i | bp_redirect_req;
 `ifdef SCR1_BP_BTB
-// A steer-misfetch redirects to the sequential fall-through, not the branch target.
+// steer-misfetch redirects to the sequential fall-through
 assign pc_new_i2     = exu2ifu_pc_new_req_i ? exu2ifu_pc_new_i
                      : bp_steer_misfetch     ? bp_seq_pc
                                              : bp_any_target;
@@ -1121,18 +1145,11 @@ assign pc_new_i2     = exu2ifu_pc_new_req_i ? exu2ifu_pc_new_i : bp_any_target;
 
 `ifdef SCR1_BP_DYNAMIC
 //------------------------------------------------------------------------------
-// Dynamic branch predictor - D0 scaffolding (no functional change yet)
+// Dynamic branch predictor
 //------------------------------------------------------------------------------
-// Carry the predicted direction and the BHT index to EXU alongside the
-// instruction. The index is the shadow-PC (RVC => 2-byte aligned, so from
-// bit 1). Today the direction still comes from the static BTFN block; D1
-// replaces bp_predict_taken's source with a BHT read indexed by this same
-// ifu_head_pc, and consumes the exu2ifu_bp_upd_* training channel below.
-// Honest direction from BHT/BTFN (no force-taken): a steered branch that the
-// direction predictor calls not-taken is corrected in the IFU (steer misfetch
-// flush to the sequential path), so it costs no extra EXU mispredict.
+// Carry the predicted direction and the BHT index (shadow-PC[.:1]) to EXU
 assign ifu2exu_bp_predicted_taken_o = bp_predict_taken;
-assign ifu2exu_bp_index_o           = ifu_head_pc[SCR1_BP_BHT_IDX_W:1];
+assign ifu2exu_bp_index_o           = ifu_head_pc[SCR1_BP_BHT_IDX_W:1] ^ gshare_hash;
 `endif // SCR1_BP_DYNAMIC
 
 `ifdef SCR1_TRGT_SIMULATION

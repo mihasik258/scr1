@@ -420,9 +420,22 @@ longint unsigned bpp_taken_rviun = 0; // RVI on an odd halfword (word-straddling
 // not-taken -> misfetch flush to the sequential path (a bubble the book's
 // fetch-time counter gating would avoid).
 longint unsigned bpp_steer_misfetch = 0;
+// Phase-0.c: attribute each late-redirect bubble (bub_bp) to the steerability
+// class of the head branch that caused the redirect -> ceiling per predecode phase.
+longint unsigned bpp_bpredir_safe  = 0; // late redirect: head safe (BTB-miss/BHT-gate addressable)
+longint unsigned bpp_bpredir_rvclo = 0; // ... rvc_low       (Phase-1 predecode addressable)
+longint unsigned bpp_bpredir_rviun = 0; // ... rvi_unaligned  (Phase-2 straddle addressable)
+longint unsigned bpp_bub_bp_safe   = 0; // bub_bp cycles owned by a safe redirect
+longint unsigned bpp_bub_bp_rvclo  = 0; // ... by an rvc_low redirect
+longint unsigned bpp_bub_bp_rviun  = 0; // ... by an rvi_unaligned redirect
+int unsigned     bpp_bp_class      = 0; // class owning the current bp shadow (0 safe,1 rvclo,2 rviun)
 
 always_ff @(posedge clk) begin
     if (rst_n) begin
+        // steerability class of the current IFU head branch (fetch-side view)
+        automatic logic          bpp_h_rvc = i_top.i_core_top.i_pipe_top.i_pipe_ifu.q_head_is_rvc;
+        automatic logic          bpp_h_p1  = i_top.i_core_top.i_pipe_top.i_pipe_ifu.ifu_head_pc[1];
+        automatic int unsigned   bpp_h_cls = (~(bpp_h_p1 ^ bpp_h_rvc)) ? 0 : ((bpp_h_rvc & ~bpp_h_p1) ? 1 : 2);
         bpp_cycles <= bpp_cycles + 1;
         if (i_top.i_core_top.i_pipe_top.instret)
             bpp_instret <= bpp_instret + 1;
@@ -458,6 +471,12 @@ always_ff @(posedge clk) begin
         if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_redirect_req) begin
             bpp_bp_redir <= bpp_bp_redir + 1;
             bpp_bp_shadow <= BPP_W;
+            bpp_bp_class  <= bpp_h_cls; // remember cause for the shadow cycles
+            case (bpp_h_cls)
+                0: bpp_bpredir_safe  <= bpp_bpredir_safe  + 1;
+                1: bpp_bpredir_rvclo <= bpp_bpredir_rvclo + 1;
+                default: bpp_bpredir_rviun <= bpp_bpredir_rviun + 1;
+            endcase
         end else if (bpp_bp_shadow != 0)
             bpp_bp_shadow <= bpp_bp_shadow - 1;
 `endif // SCR1_BPRED_EN
@@ -471,9 +490,16 @@ always_ff @(posedge clk) begin
             ~i_top.i_core_top.i_pipe_top.ifu2idu_vd) begin
             bpp_fe_bubble <= bpp_fe_bubble + 1;
 `ifdef SCR1_BPRED_EN
-            if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_redirect_req | (bpp_bp_shadow != 0))
+            if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_redirect_req | (bpp_bp_shadow != 0)) begin
+                automatic int unsigned bpp_own =
+                    i_top.i_core_top.i_pipe_top.i_pipe_ifu.bp_redirect_req ? bpp_h_cls : bpp_bp_class;
                 bpp_bub_bp <= bpp_bub_bp + 1;
-            else
+                case (bpp_own)
+                    0: bpp_bub_bp_safe  <= bpp_bub_bp_safe  + 1;
+                    1: bpp_bub_bp_rvclo <= bpp_bub_bp_rvclo + 1;
+                    default: bpp_bub_bp_rviun <= bpp_bub_bp_rviun + 1;
+                endcase
+            end else
 `endif // SCR1_BPRED_EN
             if (i_top.i_core_top.i_pipe_top.i_pipe_ifu.exu2ifu_pc_new_req_i | (bpp_exu_shadow != 0))
                 bpp_bub_exu <= bpp_bub_exu + 1;
@@ -493,6 +519,9 @@ final begin
 `endif // SCR1_BP_BTB
     $display("BP_PROFILE4 taken_total=%0d safe=%0d rvc_low=%0d rvi_unaligned=%0d",
              bpp_taken_total, bpp_taken_safe, bpp_taken_rvclo, bpp_taken_rviun);
+    $display("BP_PROFILE5 bpredir[safe=%0d rvclo=%0d rviun=%0d] bub_bp[safe=%0d rvclo=%0d rviun=%0d]",
+             bpp_bpredir_safe, bpp_bpredir_rvclo, bpp_bpredir_rviun,
+             bpp_bub_bp_safe, bpp_bub_bp_rvclo, bpp_bub_bp_rviun);
 end
 `endif // SCR1_BP_PROFILE
 

@@ -1,24 +1,13 @@
-/// SCR1 Branch History Table (BHT)
 /// @file       <scr1_pipe_bht.sv>
-/// @brief      Direction predictor: 2-bit saturating counters indexed by PC
+/// @brief      Branch History Table (BHT): 2-bit saturating counters indexed by PC
 ///
 /// Adapted from OpenHW CVA6 `core/frontend/bht.sv`
 ///   Copyright/Contributors: OpenHW Group. Licensed under the Solderpad HW License v2.0.
 ///
-/// Changes vs. the original CVA6 module:
-///  - removed `config_pkg`/`ariane_pkg` types: plain SCR1 signals;
-///  - scalarised: SCR1 fetches one instruction at a time, so the per-fetch
-///    array `bht_prediction_o[INSTR_PER_FETCH-1:0]` collapses to a single
-///    {valid, taken} output;
-///  - register-based storage (no macro RAM): fine for the small table on a
-///    slow MCU-class core, and gives a simple synchronous reset of valid bits;
-///  - SCR1 naming.
-///
-/// Functionality (unchanged from CVA6): each entry is a 2-bit saturating
-/// counter plus a valid bit. The counter MSB is the predicted direction
-/// (1x -> taken, 0x -> not-taken). `valid` tells the caller whether the entry
-/// has ever been trained, so an untrained entry can fall back to static BTFN.
-/// Updates come from the execution stage on every resolved conditional branch.
+// Functionality:
+// - Each entry: 2-bit saturating counter + valid bit; counter MSB = direction
+// - valid=0 (untrained) lets the caller fall back to static BTFN
+// - Updated by the execution stage on every resolved conditional branch
 
 `include "scr1_arch_description.svh"
 
@@ -29,13 +18,13 @@ module scr1_pipe_bht #(
     input   logic                       clk,
     input   logic                       rst_n,
 
-    // Read port (combinational), indexed at the queue output by the shadow PC
+    // Read port (combinational)
     input   logic [SCR1_BHT_IDX_W-1:0]  bht_rindex_i,           // read index
     output  logic                       bht_valid_o,            // entry has been trained
     output  logic                       bht_taken_o,            // predicted direction (counter MSB)
 
-    // Second read port (combinational), for the early fetch-side steer gate
-    input   logic [SCR1_BHT_IDX_W-1:0]  bht_rindex2_i,          // read index (BTB-stored branch index)
+    // Second read port (combinational), for the fetch-side steer gate
+    input   logic [SCR1_BHT_IDX_W-1:0]  bht_rindex2_i,          // read index
     output  logic                       bht_valid2_o,           // entry has been trained
     output  logic                       bht_taken2_o,           // predicted direction
 
@@ -45,8 +34,7 @@ module scr1_pipe_bht #(
     input   logic                       bht_upd_taken_i         // actual taken outcome
 );
 
-// Entry storage as packed vectors so the whole table resets in one statement
-// (no for-loop reset, which some tools reject for arrays).
+// Entry storage (packed vectors)
 //   valid_q[i]      - entry i has been trained
 //   sat_q[i][1:0]   - 2-bit saturating counter, MSB = predicted direction
 logic [SCR1_BHT_SIZE-1:0]        valid_q;
@@ -54,7 +42,7 @@ logic [SCR1_BHT_SIZE-1:0][1:0]   sat_q;
 
 logic [1:0]                      sat_cur;
 
-// Read (untrained entries report valid=0 -> caller uses BTFN fallback)
+// Read (untrained entries report valid=0)
 assign bht_valid_o = valid_q[bht_rindex_i];
 assign bht_taken_o = sat_q[bht_rindex_i][1];
 
@@ -71,8 +59,7 @@ always_ff @(posedge clk, negedge rst_n) begin
     end else if (bht_upd_vd_i) begin
         valid_q[bht_upd_index_i] <= 1'b1;
         if (~valid_q[bht_upd_index_i]) begin
-            // First observation: jump the counter to weakly match the outcome,
-            // so the next prediction already tracks it (learn in one step).
+            // First observation: jump to the weak state matching the outcome
             sat_q[bht_upd_index_i] <= bht_upd_taken_i ? 2'b10 : 2'b01;
         end else if (bht_upd_taken_i) begin
             if (sat_cur != 2'b11) sat_q[bht_upd_index_i] <= sat_cur + 2'b01;

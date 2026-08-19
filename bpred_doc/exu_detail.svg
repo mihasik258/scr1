@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 520" font-family="'DejaVu Sans', 'Segoe UI', system-ui, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Predictor connections at the EXU stage</title>
+  <desc id="d">How the branch resolves in EXU and trains the BHT and BTB, and how a misprediction redirects fetch.</desc>
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#243740"/></marker>
+    <marker id="aa" markerWidth="10" markerHeight="10" refX="7.5" refY="3" orient="auto"><path d="M0,0 L7.5,3 L0,6 Z" fill="#b9791b"/></marker>
+  </defs>
+  <rect x="0" y="0" width="1060" height="520" fill="#ffffff"/>
+  <text x="32" y="38" font-size="20" font-weight="700" fill="#243740">Деталь 2 - разрешение перехода и обучение таблиц в EXU</text>
+  <text x="33" y="59" font-size="12.5" fill="#5a6b73">EXU - источник истины: обучает предсказатель и перекрывает его при ошибке</text>
+
+  <!-- EXU container -->
+  <rect x="36" y="86" width="452" height="384" rx="10" fill="#eef7fc" stroke="#243740" stroke-width="1.6"/>
+  <text x="52" y="108" font-size="14.5" font-weight="700" fill="#243740">EXU - исполнение</text>
+
+  <rect x="62" y="126" width="184" height="58" rx="6" fill="#cfe8f6" stroke="#243740" stroke-width="1.3"/>
+  <text x="154" y="150" text-anchor="middle" font-size="12.5" font-weight="700" fill="#243740">Адрес перехода</text>
+  <text x="154" y="169" text-anchor="middle" font-size="10.3" fill="#40525b" font-family="monospace">pc_curr_ff</text>
+
+  <rect x="62" y="214" width="184" height="66" rx="6" fill="#b1ddf0" stroke="#243740" stroke-width="1.3"/>
+  <text x="154" y="239" text-anchor="middle" font-size="12.5" font-weight="700" fill="#243740">IALU - разрешение</text>
+  <text x="154" y="258" text-anchor="middle" font-size="10.3" fill="#40525b">реально взят? · реальная цель</text>
+
+  <rect x="62" y="316" width="184" height="58" rx="6" fill="#eef2f4" stroke="#243740" stroke-width="1.1" stroke-dasharray="3 2"/>
+  <text x="154" y="340" text-anchor="middle" font-size="10.4" fill="#40525b">предсказание приехало</text>
+  <text x="154" y="357" text-anchor="middle" font-size="10.4" fill="#40525b">с командой (индекс + напр.)</text>
+
+  <rect x="290" y="214" width="176" height="82" rx="6" fill="#b1ddf0" stroke="#243740" stroke-width="1.3"/>
+  <text x="378" y="240" text-anchor="middle" font-size="12.5" font-weight="700" fill="#243740">Сравнение</text>
+  <text x="378" y="259" text-anchor="middle" font-size="10.3" fill="#40525b">предсказание vs факт</text>
+  <text x="378" y="277" text-anchor="middle" font-size="10.3" fill="#40525b">mispredict?</text>
+
+  <line x1="154" y1="184" x2="154" y2="212" stroke="#243740" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="246" y1="247" x2="288" y2="247" stroke="#243740" stroke-width="1.4" marker-end="url(#a)"/>
+  <path d="M246,342 L268,342 L268,282 L288,282" fill="none" stroke="#243740" stroke-width="1.2" marker-end="url(#a)"/>
+
+  <!-- targets -->
+  <rect x="654" y="120" width="214" height="86" rx="8" fill="#ffe1b0" stroke="#b9791b" stroke-width="1.6"/>
+  <text x="761" y="145" text-anchor="middle" font-size="13.5" font-weight="700" fill="#7a4d10">BHT (в IFU) - обучение</text>
+  <text x="761" y="165" text-anchor="middle" font-size="10.5" fill="#7a4d10">индекс (с фетча) + факт;</text>
+  <text x="761" y="183" text-anchor="middle" font-size="10.5" fill="#7a4d10">счётчик сдвигается к исходу</text>
+
+  <rect x="654" y="238" width="214" height="86" rx="8" fill="#ffe1b0" stroke="#b9791b" stroke-width="1.6"/>
+  <text x="761" y="263" text-anchor="middle" font-size="13.5" font-weight="700" fill="#7a4d10">BTB (в IFU) - обучение</text>
+  <text x="761" y="283" text-anchor="middle" font-size="10.5" fill="#7a4d10">адрес перехода + реальная цель;</text>
+  <text x="761" y="301" text-anchor="middle" font-size="10.5" fill="#7a4d10">только взятые прямые (ветка/JAL)</text>
+
+  <rect x="654" y="358" width="214" height="82" rx="8" fill="#cfe8f6" stroke="#243740" stroke-width="1.6"/>
+  <text x="761" y="384" text-anchor="middle" font-size="13.5" font-weight="700" fill="#243740">IFU - выборка</text>
+  <text x="761" y="403" text-anchor="middle" font-size="10.5" fill="#40525b">редирект на верный адрес</text>
+  <text x="761" y="420" text-anchor="middle" font-size="10.2" fill="#243740" font-weight="600">перекрывает предсказание</text>
+
+  <!-- training arrows: exit EXU right edge, routed clear of the Сравнение box -->
+  <!-- BHT: from IALU top-right, up over the container, out to BHT -->
+  <path d="M246,222 L268,222 L268,163 L652,163" fill="none" stroke="#b9791b" stroke-width="1.6" marker-end="url(#aa)"/>
+  <text x="566" y="156" text-anchor="middle" font-size="10.5" fill="#8a5f22" font-weight="600">обучение направления</text>
+  <!-- BTB: from IALU bottom-right, curve BELOW the Сравнение box, out to BTB -->
+  <path d="M246,278 C360,344 520,300 652,290" fill="none" stroke="#b9791b" stroke-width="1.6" marker-end="url(#aa)"/>
+  <text x="578" y="258" text-anchor="middle" font-size="10.5" fill="#8a5f22" font-weight="600">обучение цели</text>
+  <!-- redirect: from Сравнение bottom, down and right to IFU -->
+  <path d="M378,296 L378,399 L652,399" fill="none" stroke="#243740" stroke-width="1.8" marker-end="url(#a)"/>
+  <text x="512" y="392" text-anchor="middle" font-size="10.5" fill="#243740" font-weight="600">редирект (mispredict)</text>
+
+  <!-- RAS note (below the EXU container) -->
+  <text x="530" y="500" text-anchor="middle" font-size="10.6" fill="#7a4d10">Возврат (RAS): если вершина стека совпала с реальной целью - флаша нет; иначе EXU перенаправит.</text>
+</svg>

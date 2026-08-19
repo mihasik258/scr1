@@ -1,19 +1,12 @@
-/// SCR1 Return Address Stack (RAS)
 /// @file       <scr1_pipe_ras.sv>
-/// @brief      Return Address Stack for return (ret) target prediction
+/// @brief      Return Address Stack (RAS) for return target prediction
 ///
 /// Adapted from OpenHW CVA6 `core/frontend/ras.sv`
 ///   Copyright/Contributors: OpenHW Group. Licensed under the Solderpad HW License v2.0.
 ///
-/// Changes vs. the original CVA6 module:
-///  - removed `config_pkg`/`ariane_pkg` types: plain SCR1 signals;
-///  - explicit {valid, ra} entry struct instead of the parametrised ras_t;
-///  - SCR1 naming.
-///
-/// Functionality (unchanged from CVA6): a small shift-register stack. A call
-/// pushes the return address; a return pops it and the top entry is the
-/// predicted return target. flush clears the whole stack (used to drop
-/// speculatively corrupted state on a misprediction).
+// Functionality:
+// - Shift-register stack: a call pushes the return address, a return pops it
+// - Top entry is the predicted return target; flush clears the whole stack
 
 `include "scr1_arch_description.svh"
 
@@ -57,14 +50,14 @@ always_comb begin
         stack_d[SCR1_RAS_DEPTH-1].ra        = '0;
     end
 
-    // Simultaneous pop+push (co-routine): just replace the top
+    // Simultaneous pop+push: replace the top
     if (ras_pop_i && ras_push_i) begin
         stack_d          = stack_q;
         stack_d[0].ra    = ras_data_i;
         stack_d[0].valid = 1'b1;
     end
 
-    // Flush drops all speculative state (highest priority)
+    // Flush (highest priority)
     if (ras_flush_i) begin
         stack_d = '0;
     end
