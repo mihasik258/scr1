@@ -75,12 +75,41 @@ gshare-свип по ширине истории (1024-таблица, агре�
 4. sglib/huffbench/wikisort имеют низкий потолок (90–93 %) — их ветки реально шумные
    (data-dependent), там не помогает ни ёмкость, ни история.
 
-## 5. CBP-трейсы
+## 5. Против SoTA (CBP-NG, TAGE-SC-L)
 
-Официальные CBP-16 трейсы гейтнуты (TAMU/NCSU, подписка; формат BT9). Та же модель
-`bpsim` читает и их после конвертации BT9→`PC taken` (утилита в
-`craymichael/CBP-16-Simulation`). Наши трейсы релевантнее (наш ISA/код), но CBP дал бы
-сравнимость с литературой — добавляется без изменений модели.
+Чтобы поставить нашу точность в контекст соревнований, собран фреймворк **CBP-NG
+2025** (`github.com/AmpereComputing/cbp-ng`, `g++ -std=c++20 -lz`, флаг `-Wno-error`
+для их reference-хедера) с эталонным предсказателем **TAGE-SC-L** (Seznec, 1531 Кбит).
+Из CBP-трейса извлечены условные ветки (`BR_COND`) в наш формат `PC taken` (экстрактор
+на `trace_reader.hpp`) и прогнаны через `bpsim` — так наш маленький BHT и SoTA
+сравниваются на **одном стандартном трейсе**.
 
-*Инструменты: tb `-DSCR1_BP_TRACE`, `scratchpad/bpsim.c`, трейсы `scratchpad/traces/`.
-См. также [optimization_study.md](optimization_study.md), [embench_suite.md](embench_suite.md).*
+**Трейс `gcc_test` (493 313 условных веток):**
+
+| предсказатель | память | accuracy | mispred |
+|---|---|---|---|
+| always-NT (No-BPU) | — | 45.9 % | 266 664 |
+| **bimodal-2b (BHT SCR1)** | ~2 Кбит | **91.4 %** | 42 322 |
+| gshare-2b (наш) | ~2 Кбит | 92.0 % | 39 413 |
+| gshare-16b / 64K (потолок нашей схемы) | 128 Кбит | 94.0 % | 29 799 |
+| **TAGE-SC-L (SoTA)** | **1531 Кбит** | **98.0 %** | 9 845 |
+
+Свип размера на `gcc`: bimodal насыщается на **~91.6 %** (упор в алгоритм 2-бит, не в
+ёмкость), gshare — плато **~94 %**. Дальше только TAGE/перцептрон.
+
+**Что это значит.** Наш BHT берёт 91.4 % точности за **~2 Кбит**; SoTA TAGE-SC-L —
+98.0 %, но ценой **×750 памяти** и несоизмеримой сложности (мн. тэг-таблиц +
+статкорректор + loop + IMLI). Разрыв (91→98 %, ~4× меньше промахов) критичен для
+больших OoO-ядер с глубоким конвейером (промах 15–20 тактов), но **на SCR1
+бесполезен**: 3-ступенчатое in-order, промах ~2–3 такта, узкое место — фронтенд, и эта
+точность в циклы не конвертируется. То есть наш предсказатель — **оптимален для своего
+класса ядра**, а не «слабее TAGE».
+
+Конвейер готов к любому CBP-трейсу: `./compile extract_trace -Wno-error` →
+`./extract_trace <trace.gz> > t.trace` → `bpsim t.trace`. (Официальные CBP-16 BT9-трейсы
+гейтнуты — подписка TAMU/NCSU; CBP-NG-трейсы доступнее.)
+
+*Инструменты: tb `-DSCR1_BP_TRACE`, `scratchpad/bpsim.c`, `scratchpad/bpsize.c` (свип
+размера), `cbp-ng/extract_trace.cpp`, трейсы `scratchpad/traces/`.
+См. также [optimization_study.md](optimization_study.md),
+[embench_suite.md](embench_suite.md), [recommended_config.md](recommended_config.md).*
