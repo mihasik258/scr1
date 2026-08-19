@@ -221,6 +221,9 @@ coremark: | $(bld_dir)
 qsort: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/benchmarks/qsort EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
 
+nsichneu aha-mont64 crc32 edn huffbench matmult-int md5sum nettle-aes nettle-sha256 sglib-combined slre tarfind wikisort depthconv statemate ud: | $(bld_dir)
+	$(MAKE) -C $(tst_dir)/benchmarks/$@ EXT_CFLAGS="$(EXT_CFLAGS)" ARCH=$(ARCH)
+
 riscv_isa: | $(bld_dir)
 	$(MAKE) -C $(tst_dir)/riscv_isa ARCH=$(ARCH)
 

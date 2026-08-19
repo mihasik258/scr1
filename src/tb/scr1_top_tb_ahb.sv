@@ -19,7 +19,7 @@ module scr1_top_tb_ahb (
 // Local parameters
 //-------------------------------------------------------------------------------
 localparam                          SCR1_MEM_SIZE       = 1024*1024;
-localparam                          TIMEOUT             = 'd2000_000;//20ms;
+localparam                          TIMEOUT             = 'd500_000_000;//20ms;
 localparam                          ARCH                = 'h1;
 localparam                          COMPLIANCE          = 'h2;
 localparam                          ADDR_START          = 'h200;
@@ -437,6 +437,17 @@ always_ff @(posedge clk) begin
         automatic logic          bpp_h_p1  = i_top.i_core_top.i_pipe_top.i_pipe_ifu.ifu_head_pc[1];
         automatic int unsigned   bpp_h_cls = (~(bpp_h_p1 ^ bpp_h_rvc)) ? 0 : ((bpp_h_rvc & ~bpp_h_p1) ? 1 : 2);
         bpp_cycles <= bpp_cycles + 1;
+`ifdef SCR1_BP_TRACE
+        // Stage-2 branch trace: one line per retired CONDITIONAL branch:
+        //   BT <hex PC> <actual taken 0/1>
+        // Fed to the offline C reference model (bpsim) for direct-accuracy /
+        // algorithm comparison (bimodal / gshare / ideal), black-parrot style.
+        if (i_top.i_core_top.i_pipe_top.instret
+            & i_top.i_core_top.i_pipe_top.i_pipe_exu.exu_queue.branch_req)
+            $display("BT %08h %0d",
+                i_top.i_core_top.i_pipe_top.i_pipe_exu.pc_curr_ff,
+                i_top.i_core_top.i_pipe_top.i_pipe_exu.branch_taken);
+`endif
         if (i_top.i_core_top.i_pipe_top.instret)
             bpp_instret <= bpp_instret + 1;
         if (i_top.i_core_top.i_pipe_top.instret &
