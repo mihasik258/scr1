@@ -166,5 +166,5 @@ RAS насыщается ~8; depth 4 оптимум (даже 2 почти бе�
 
 ---
 
-*Источники данных: `scratchpad/{pred_on,pred_off,pred_on_q4,pred_off_q4,bht_full,btb_full,ras_full}.txt`,
-`bpsim`/`bpsize` (трейс-модель), `cbp-ng` (TAGE-SC-L). Все Δ — verilator, CFG=RV32IMC_MAX, CRC/verify.*
+*Источники данных: сырые прогоны (регенерируются свипами),
+модель `tools/bpsim.c`/`tools/bpsize.c`, `cbp-ng` (TAGE-SC-L). Все Δ — verilator, CFG=RV32IMC_MAX, CRC/verify.*

@@ -109,7 +109,7 @@ gshare-свип по ширине истории (1024-таблица, агре�
 `./extract_trace <trace.gz> > t.trace` → `bpsim t.trace`. (Официальные CBP-16 BT9-трейсы
 гейтнуты — подписка TAMU/NCSU; CBP-NG-трейсы доступнее.)
 
-*Инструменты: tb `-DSCR1_BP_TRACE`, `scratchpad/bpsim.c`, `scratchpad/bpsize.c` (свип
-размера), `cbp-ng/extract_trace.cpp`, трейсы `scratchpad/traces/`.
+*Инструменты: tb `-DSCR1_BP_TRACE`, `tools/bpsim.c`, `tools/bpsize.c` (свип
+размера), `tools/extract_trace.cpp` (см. tools/README.md).
 См. также [optimization_study.md](optimization_study.md),
 [embench_suite.md](embench_suite.md), [recommended_config.md](recommended_config.md).*
